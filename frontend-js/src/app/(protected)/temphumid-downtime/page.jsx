@@ -38,7 +38,6 @@ import { DataTable } from "@/components/custom/DataTable";
 // SECTION 1: CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Threshold in seconds after which an ongoing record is considered escalated. */
 const ESCALATION_THRESHOLD_SECONDS = 2 * 60 * 60; // 2 hours
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +57,6 @@ const DOWNTIME_REASONS = [
 ];
 
 const REASON_OPTIONS = DOWNTIME_REASONS.filter(r => r.id !== "").map(r => ({ value: r.id, label: r.label }));
-
 const REASON_SELECT_OPTIONS = [{ value: "", label: "Select reason…" }, ...REASON_OPTIONS];
 
 const SYMPTOM_LABELS = {
@@ -83,7 +81,7 @@ const SAMPLE_HISTORY = [
     reason1: "No Data", reason2: "Hardware Damage",
     startedAt: new Date(Date.now() - 1000 * 60 * 75),
     resolvedAt: new Date(Date.now() - 1000 * 60 * 8),
-    outcome: "fixed",
+    outcome: "success",
   },
   {
     id: "dth-002", sensorName: "Dipping", floor: "P1F1",
@@ -96,9 +94,8 @@ const SAMPLE_HISTORY = [
 ];
 
 const OUTCOME_CONFIG = {
-  fixed:    { label: "Fixed",    solid: "#198754", text: "#fff" },
-  failed:   { label: "Failed",   solid: "#dc3545", text: "#fff" },
-  replaced: { label: "Replaced", solid: "#6c757d", text: "#fff" },
+  success: { label: "Success", solid: "#198754", text: "#fff" },
+  failed:  { label: "Failed",  solid: "#dc3545", text: "#fff" },
 };
 
 
@@ -182,20 +179,6 @@ function validateMarkDoneTechnician(rawValue, expectedId) {
 // SECTION 3: ESCALATION HOOK
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * useEscalation(records)
- *
- * Watches all ongoing stop-line records. When any record crosses the
- * ESCALATION_THRESHOLD_SECONDS mark for the first time, it:
- *
- *   1. Adds the record ID to the escalated banner state (shown in UI).
- *   2. [BACKEND #9] Calls triggerEscalationAlert() — currently a placeholder.
- *      Replace the placeholder with a real API call once backend is ready.
- *
- * Uses a ref (firedRef) to track which IDs have already been escalated so the
- * alert only fires once per record, even across re-renders or timer ticks.
- * The ref is cleaned up when a record is removed from the list (resolved).
- */
 function useEscalation(records) {
   const firedRef = useRef(new Set());
   const [escalatedIds, setEscalatedIds] = useState(new Set());
@@ -205,15 +188,13 @@ function useEscalation(records) {
 
     const interval = setInterval(() => {
       const now = Date.now();
-
-      // Clean up IDs that are no longer in the stop line list
       const activeIds = new Set(records.map(r => r.id));
       firedRef.current.forEach(id => {
         if (!activeIds.has(id)) firedRef.current.delete(id);
       });
 
       records.forEach(record => {
-        if (record.resolvedAt) return; // already resolved, skip
+        if (record.resolvedAt) return;
         const elapsedSeconds = Math.floor((now - record.startedAt.getTime()) / 1000);
         if (elapsedSeconds >= ESCALATION_THRESHOLD_SECONDS && !firedRef.current.has(record.id)) {
           firedRef.current.add(record.id);
@@ -221,7 +202,7 @@ function useEscalation(records) {
           triggerEscalationAlert(record, elapsedSeconds);
         }
       });
-    }, 10000); // check every 10 seconds — fine-grained enough without being wasteful
+    }, 10000);
 
     return () => clearInterval(interval);
   }, [records]);
@@ -237,27 +218,6 @@ function useEscalation(records) {
   return { escalatedIds, dismissEscalation };
 }
 
-/**
- * triggerEscalationAlert(record, elapsedSeconds)
- *
- * ─────────────────────────────────────────────────────────────────────────────
- * [BACKEND #9] ESCALATION ALERT — REPLACE THIS PLACEHOLDER WHEN BACKEND IS READY
- * ─────────────────────────────────────────────────────────────────────────────
- *
- * This function is called once per record when it has been ongoing for >= 2 hours.
- *
- * What the backend should do when it receives this call:
- *   • Look up the responsible supervisor/engineer for the given floor/sensor
- *   • Send a notification via email / SMS / Teams / Slack / internal system
- *   • Log the escalation event in the DB (table: downtime_escalations)
- *
- * Endpoint to implement:
- *   POST /api/downtime/escalate/:id
- *   Body: { sensorName, floor, technicianId, elapsedSeconds }
- *   Returns: { ok: true } or { ok: false, error: string }
- *
- * To activate: uncomment the fetch() block below and remove the console.warn.
- */
 async function triggerEscalationAlert(record, elapsedSeconds) {
   console.warn(
     `[ESCALATION] Record "${record.id}" (${record.sensorName} · ${record.floor}) ` +
@@ -428,16 +388,6 @@ function StepBar({ step, total = 3 }) {
   );
 }
 
-/**
- * EscalationBanner
- *
- * Shown inside the Stop Line List panel when a record has been ongoing >= 2 hours.
- * Dismissible per record — dismissing only hides the banner in the UI, it does
- * NOT cancel the backend notification (which has already been sent).
- *
- * [BACKEND #9] The banner is a UI-only indicator. The actual alert is sent via
- * triggerEscalationAlert(). Wire up the backend endpoint to handle notifications.
- */
 function EscalationBanner({ record, onDismiss }) {
   return (
     <div style={{
@@ -455,7 +405,6 @@ function EscalationBanner({ record, onDismiss }) {
           <strong>{record.sensorName}</strong> · {record.floor} · Operator: {record.technicianId}
         </div>
         <div style={{ fontSize: 10, color: "#856404", marginTop: 3, fontStyle: "italic" }}>
-          {/* [BACKEND #9] Replace this line with real notification status once backend is live */}
           Supervisor notification pending — awaiting backend integration
         </div>
       </div>
@@ -538,15 +487,15 @@ function StartDowntimeContent({ onQueued, onClose }) {
           />
           {scanError1 && <p className="text-sm text-destructive" style={{ marginTop: 4 }}>{scanError1}</p>}
           <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
-            <Button type="button" size="sm" variant="outline"
+            <Button type="button" size="sm" variant="outline" style={{ cursor: "pointer" }}
               onClick={() => handleSensorScan("http://192.168.1.16:4001/index1.php?line_name=SMT+MH")}>
               Test: SMT MH (Breach)
             </Button>
-            <Button type="button" size="sm" variant="outline"
+            <Button type="button" size="sm" variant="outline" style={{ cursor: "pointer" }}
               onClick={() => handleSensorScan("http://192.168.1.16:4001/index1.php?line_name=SMT+MH+Dessicator+3")}>
               Test: SMT MH Dessicator 3 (No Data)
             </Button>
-            <Button type="button" size="sm" variant="outline"
+            <Button type="button" size="sm" variant="outline" style={{ cursor: "pointer" }}
               onClick={() => handleSensorScan("http://192.168.1.16:4001/index1.php?line_name=SMT+MH+Dessicator+6")}>
               Test: SMT MH Dessicator 6 (Active — should fail)
             </Button>
@@ -568,14 +517,14 @@ function StartDowntimeContent({ onQueued, onClose }) {
           />
           {scanError2 && <p className="text-sm text-destructive">{scanError2}</p>}
           <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
-            <Button type="button" size="sm" variant="outline" onClick={() => handleTechScan("12160")}>
+            <Button type="button" size="sm" variant="outline" style={{ cursor: "pointer" }} onClick={() => handleTechScan("12160")}>
               Test: Scan ID 12160
             </Button>
-            <Button type="button" size="sm" variant="outline" onClick={() => handleTechScan("00000")}>
+            <Button type="button" size="sm" variant="outline" style={{ cursor: "pointer" }} onClick={() => handleTechScan("00000")}>
               Test: Scan ID 00000
             </Button>
           </div>
-          <Button type="button" size="default" variant="outline" className="w-full" onClick={() => setStep(1)}>Back</Button>
+          <Button type="button" size="default" variant="outline" className="w-full" style={{ cursor: "pointer" }} onClick={() => setStep(1)}>Back</Button>
         </>
       )}
 
@@ -599,8 +548,8 @@ function StartDowntimeContent({ onQueued, onClose }) {
           </div>
           {apiError && <p className="text-sm text-destructive">{apiError}</p>}
           <div style={{ display: "flex", gap: 8 }}>
-            <Button type="button" size="default" variant="outline" className="flex-1" onClick={() => setStep(2)} disabled={saving}>Back</Button>
-            <Button type="button" size="default" variant="default" className="flex-1" onClick={handleQueue} disabled={saving}>
+            <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={() => setStep(2)} disabled={saving}>Back</Button>
+            <Button type="button" size="default" variant="default" className="flex-1" style={{ cursor: "pointer" }} onClick={handleQueue} disabled={saving}>
               {saving ? "Starting…" : "Queue for Downtime"}
             </Button>
           </div>
@@ -663,11 +612,11 @@ function MarkDoneContent({ record, onDone, onClose }) {
             onError={msg => setScanError(msg)}
           />
           {scanError && <p className="text-sm text-destructive">{scanError}</p>}
-          <Button type="button" size="sm" variant="outline" className="w-full"
+          <Button type="button" size="sm" variant="outline" className="w-full" style={{ cursor: "pointer" }}
             onClick={() => handleReScan(record.technicianId)}>
             Test: Scan correct ID ({record.technicianId})
           </Button>
-          <Button type="button" size="sm" variant="outline" className="w-full"
+          <Button type="button" size="sm" variant="outline" className="w-full" style={{ cursor: "pointer" }}
             onClick={() => handleReScan("99999")}>
             Test: Scan wrong ID (should fail)
           </Button>
@@ -683,14 +632,14 @@ function MarkDoneContent({ record, onDone, onClose }) {
           <div style={{ display: "flex", gap: 8 }}>
             {Object.entries(OUTCOME_CONFIG).map(([key, cfg]) => (
               <button key={key} onClick={() => { setOutcome(key); setStep(3); }} disabled={saving}
-                style={{ flex: 1, padding: "12px 4px", border: "none", borderRadius: 5, cursor: "pointer",
-                  background: cfg.solid, color: cfg.text, fontWeight: 700, fontSize: 12,
+                style={{ flex: 1, padding: "8px 15px", border: "none", borderRadius: 5, cursor: "pointer",
+                  background: cfg.solid, color: cfg.text, fontWeight: 700, fontSize: 13,
                   transition: "all .15s", opacity: saving ? 0.6 : 1 }}>
                 {cfg.label}
               </button>
             ))}
           </div>
-          <Button type="button" size="default" variant="outline" className="w-full" onClick={() => setStep(1)} disabled={saving}>Back</Button>
+          <Button type="button" size="default" variant="outline" className="w-full" style={{ cursor: "pointer" }} onClick={() => setStep(1)} disabled={saving}>Back</Button>
         </>
       )}
 
@@ -708,8 +657,8 @@ function MarkDoneContent({ record, onDone, onClose }) {
           </div>
           {apiError && <p className="text-sm text-destructive">{apiError}</p>}
           <div style={{ display: "flex", gap: 8 }}>
-            <Button type="button" size="default" variant="outline" className="flex-1" onClick={() => setStep(2)} disabled={saving}>Back</Button>
-            <Button type="button" size="default" variant="default" className="flex-1" onClick={handleConfirm} disabled={!outcome || !reason || saving}>
+            <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={() => setStep(2)} disabled={saving}>Back</Button>
+            <Button type="button" size="default" variant="default" className="flex-1" style={{ cursor: "pointer" }} onClick={handleConfirm} disabled={!outcome || !reason || saving}>
               {saving ? "Saving…" : "Confirm & Mark Done"}
             </Button>
           </div>
@@ -742,7 +691,7 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
       {pendingDone.length === 0
         ? <p className="text-sm text-muted-foreground text-center" style={{ padding: "16px 0" }}>No resolved records yet. Mark records as done first.</p>
         : pendingDone.map(r => {
-            const oc = OUTCOME_CONFIG[r.outcome] ?? OUTCOME_CONFIG.fixed;
+            const oc = OUTCOME_CONFIG[r.outcome] ?? OUTCOME_CONFIG.success;
             return (
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid #e9ecef", borderRadius: 5 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: oc.solid, color: oc.text, textTransform: "uppercase", letterSpacing: ".04em", flexShrink: 0 }}>{oc.label}</span>
@@ -755,8 +704,8 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
       }
       {apiError && <p className="text-sm text-destructive">{apiError}</p>}
       <div style={{ display: "flex", gap: 8 }}>
-        <Button type="button" size="default" variant="outline" className="flex-1 flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button type="button" size="default" variant="default" className="flex-2 flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={handleUpload} disabled={pendingDone.length === 0 || saving}>
+        <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button type="button" size="default" variant="default" className="flex-1" style={{ cursor: "pointer" }} onClick={handleUpload} disabled={pendingDone.length === 0 || saving}>
           {saving ? "Uploading…" : "Upload Downtime"}
         </Button>
       </div>
@@ -769,7 +718,7 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
 // SECTION 8: STOP LINE ROW
 // ─────────────────────────────────────────────────────────────────────────────
 
-function StopLineRow({ record, onClick, isEscalated }) {
+function StopLineRow({ record, onClick }) {
   const elapsed = useElapsed(record.startedAt, record.resolvedAt);
   const isOverdue = elapsed >= ESCALATION_THRESHOLD_SECONDS;
 
@@ -778,7 +727,6 @@ function StopLineRow({ record, onClick, isEscalated }) {
       style={{
         display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center",
         gap: 10, padding: "10px 14px", borderRadius: 5, border: "none",
-        // Shift to a deeper amber/orange when escalated to signal urgency
         background: isOverdue ? "#e65c00" : "#f59e0b",
         cursor: "pointer", transition: "opacity .15s",
       }}
@@ -797,7 +745,7 @@ function StopLineRow({ record, onClick, isEscalated }) {
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
         <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#000" }}>{formatTimer(elapsed)}</div>
-        <div style={{ fontSize: 10, color: "#000", marginTop: 2 }}>tap to mark done</div>
+        <div style={{ fontSize: 10, color: "#000", marginTop: 2 }}>Tap to Mark Done</div>
       </div>
     </div>
   );
@@ -824,7 +772,6 @@ function StopLineListPanel({ records, onRowClick, onStartDowntime, escalatedIds,
           : records.map(r => (
               <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <StopLineRow record={r} onClick={onRowClick} isEscalated={escalatedIds.has(r.id)} />
-                {/* Escalation banner appears below the row it belongs to */}
                 {escalatedIds.has(r.id) && (
                   <EscalationBanner record={r} onDismiss={onDismissEscalation} />
                 )}
@@ -833,7 +780,7 @@ function StopLineListPanel({ records, onRowClick, onStartDowntime, escalatedIds,
         }
       </div>
 
-      <Button type="button" size="default" variant="default" className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={onStartDowntime}>
+      <Button type="button" size="default" variant="default" className="w-full" style={{ cursor: "pointer" }} onClick={onStartDowntime}>
         Start Downtime
       </Button>
     </div>
@@ -883,7 +830,7 @@ const historyColumns = [
   {
     header: "Outcome",
     cell: ({ row }) => {
-      const oc = OUTCOME_CONFIG[row.original.outcome] ?? OUTCOME_CONFIG.fixed;
+      const oc = OUTCOME_CONFIG[row.original.outcome] ?? OUTCOME_CONFIG.success;
       return <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: oc.solid, color: oc.text, textTransform: "uppercase", letterSpacing: ".04em" }}>{oc.label}</span>;
     },
   },
@@ -931,7 +878,6 @@ export default function DowntimePage() {
   const [formData, setFormData] = useState({ sensorId: "", sensorName: "", floor: "", location: "", technicianId: "", technicianName: "" });
   const [symptom,  setSymptom]  = useState("");
 
-  // ── 2-hour escalation watcher ─────────────────────────────────────────────
   const { escalatedIds, dismissEscalation } = useEscalation(stopLineList);
 
   const handleQueued = ({ sensorInfo, techInfo, symptom: rawSymptom }) => {
@@ -992,7 +938,7 @@ export default function DowntimePage() {
             <h1 className="text-2xl font-bold">Sensor Downtime & Maintenance Recording</h1>
             <p className="text-muted-foreground mt-1">For sensor maintenance only</p>
           </div>
-          <Button type="button" size="default" variant="default" className="flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={pendingCount === 0} onClick={() => setUploadOpen(true)}>
+          <Button type="button" size="default" variant="default" style={{ cursor: "pointer" }} disabled={pendingCount === 0} onClick={() => setUploadOpen(true)}>
             Upload Downtime{pendingCount > 0 ? ` (${pendingCount})` : ""}
           </Button>
         </div>

@@ -100,11 +100,6 @@ const ALL_FLOORS = [
   },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SENSOR TABLE DATA — flat list of all sensors across all floors.
-// [BACKEND] TO REPLACE: GET /api/sensor-readings/all/current
-// ─────────────────────────────────────────────────────────────────────────────
-
 const SENSOR_TABLE_DATA = ALL_FLOORS.flatMap((floor) =>
   floor.sensors.map((sensor) => ({
     id:        `${floor.id}__${sensor.id}`,
@@ -115,9 +110,7 @@ const SENSOR_TABLE_DATA = ALL_FLOORS.flatMap((floor) =>
     humid:     sensor.humid,
     hasData:   sensor.hasData,
     breach:    sensor.breach,
-    // [BACKEND] Replace with real lastSeen timestamp from API
     lastSeen:  sensor.hasData ? "2026-03-05 08:00:00" : "N/A",
-    // [BACKEND] Replace with per-sensor limits from API (GET /api/sensor-limits/:sensorId)
     tempLL:    sensor.id.includes("cs") ? -5  : 18,
     tempUL:    sensor.id.includes("cs") ? 10  : 28,
     humidLL:   sensor.id.includes("dess") ? 10 : 40,
@@ -380,7 +373,7 @@ function FloorModal({ floor, onClose }) {
             </div>
             <div style={{ padding: "12px 16px", borderTop: "1px solid #e9ecef", background: "#fff" }}>
               <a href={floor.href}
-                style={{ display: "block", textAlign: "center", padding: "10px", borderRadius: 5, background: "#435ebe", color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none", transition: "background .15s" }}
+                style={{ display: "block", textAlign: "center", padding: "10px", borderRadius: 5, background: "#435ebe", color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none", cursor: "pointer", transition: "background .15s" }}
                 onMouseEnter={(e) => { e.currentTarget.style.background = "#3347a8"; }}
                 onMouseLeave={(e) => { e.currentTarget.style.background = "#435ebe"; }}>
                 Open Full Map →
@@ -395,18 +388,9 @@ function FloorModal({ floor, onClose }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5: SENSOR TABLE — column definitions (same pattern as downtime's historyColumns)
+// SECTION 5: SENSOR TABLE
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * SENSOR_TABLE_COLUMNS
- * Uses the same column-definition pattern as downtime's historyColumns,
- * consumed by <DataTable> from @/components/custom/DataTable.
- *
- * [BACKEND] "Temp Limits" and "Humid Limits" read from per-row mock data.
- *   Replace SENSOR_TABLE_DATA entries with real limit values from GET /api/sensor-limits.
- * [BACKEND] "Last Seen" reads row.lastSeen — replace with real timestamp from API.
- */
 const SENSOR_TABLE_COLUMNS = [
   { accessorKey: "floor",  header: "Floor"  },
   { accessorKey: "name",   header: "Sensor" },
@@ -497,11 +481,7 @@ export default function MonitoringPage() {
             ))}
           </div>
 
-          {/* ── Activity Log — uses DataTable from @/components/custom/DataTable,
-               identical pattern to how downtime uses it for Maintenance History.
-               [BACKEND] SENSOR_TABLE_DATA → replace with data from GET /api/sensor-readings/all/current
-               Map the API response to match the SENSOR_TABLE_DATA shape (see Section 1).
-          ── */}
+          {/* ── Activity Log ── */}
           <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "20px 24px" }}>
             <p className="font-bold mb-4">Activity Log</p>
             {SENSOR_TABLE_DATA.length === 0 ? (
