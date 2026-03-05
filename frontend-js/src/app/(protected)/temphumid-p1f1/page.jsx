@@ -6,72 +6,38 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SensorLimitsModal } from "@/components/custom/CustomModal";
+import { CustomModal } from "@/components/custom/CustomModal";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // BACKEND TRANSFER REFERENCE
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// Rule of thumb is correct:
-//   STAYS IN FRONTEND  → UI state, selection, filtering, sorting, display
-//                        derivations, client-side validation (instant feedback)
-//   MOVES TO BACKEND   → anything that reads from or writes to the database
-//
 // ┌─ TRANSFER TO BACKEND ──────────────────────────────────────────────────────
 // │
-// │  #1  DEFAULT_SENSOR_LIMITS  (hardcoded below)
+// │  #1  DEFAULT_SENSOR_LIMITS
 // │      → GET /api/limits/p1f1/per-sensor
 // │      → Returns: { [sensorId]: { tempUL, tempLL, humidUL, humidLL } }
-// │      → Called once on page load; seeds the allLimits state
 // │
-// │  #2  MAP_SENSORS  — only temp / humid / hasData fields
+// │  #2  MAP_SENSORS — only temp / humid / hasData fields
 // │      → GET /api/sensor-readings/p1f1/current
-// │      → Returns: { id, temp, humid, hasData }[]
-// │      → id, name, color, x, y, direction stay hardcoded in the frontend
-// │        (they are layout/display config, not live data)
-// │      → Poll every ~30s for live updates
+// │      → Poll every ~30s
 // │
-// │  #3  DESSICATOR_SENSORS  — only temp / humid / hasData fields
+// │  #3  DESSICATOR_SENSORS — only temp / humid / hasData fields
 // │      → GET /api/sensor-readings/p1f1/dessicators
-// │      → Returns: { id, temp, humid, hasData }[]
-// │      → Same polling pattern as #2
 // │
-// │  #4  handleSave() inside LimitsModal
-// │      → POST /api/limits/p1f1/per-sensor
-// │      → Body:    { limits: { [sensorId]: { tempUL, tempLL, humidUL, humidLL } } }
-// │      → Success: { ok: true }
-// │      → Error:   { ok: false, message: string }
-// │      → React only updates allLimits state AFTER a confirmed success response
-// │      → Backend must also validate (LL < UL, numeric) as the source of truth
-// │
-// └────────────────────────────────────────────────────────────────────────────
-//
-// ┌─ STAYS IN FRONTEND ────────────────────────────────────────────────────────
-// │
-// │  • getSensorLimits()         — local state lookup, no DB touch
-// │  • getPaneStatus()           — derives ok/breach/no-data from state
-// │  • getPaneDirection()        — UI positioning for popover arrows
-// │  • getDessicatorZoneStatus() — aggregates dessicator statuses for badge
-// │  • toggle / toggleAll        — checkbox selection state
-// │  • validate() in modal       — client-side form check for instant feedback
-// │  • STATUS_STYLES             — pure display constants
-// │  • ALL_EDITABLE_SENSORS      — sensor list for modal UI, built from metadata
-// │  • Sensor metadata           — id, name, color, x, y, direction
-// │                                (layout config, owned by frontend)
+// │  #4  handleSaveLimits() — POST /api/limits/p1f1/per-sensor
 // │
 // └────────────────────────────────────────────────────────────────────────────
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 1: DATA LAYER  (sample data — replace marked items with API calls)
+// SECTION 1: DATA LAYER
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FLOOR_PLAN_IMAGE = "/logo/assets/P1F1-6.png";
 
-// [BACKEND #1] → GET /api/limits/p1f1/per-sensor
 const DEFAULT_SENSOR_LIMITS = {
-  //             tempUL  tempLL  humidUL  humidLL
   "dipping":     { tempUL: 28, tempLL: 20, humidUL: 60, humidLL: 40 },
   "smt":         { tempUL: 28, tempLL: 22, humidUL: 60, humidLL: 40 },
   "server-room": { tempUL: 28, tempLL: 22, humidUL: 60, humidLL: 40 },
@@ -90,8 +56,6 @@ const DEFAULT_SENSOR_LIMITS = {
   "dess-6":      { tempUL: 28, tempLL: 20, humidUL: 50, humidLL:  0 },
 };
 
-// Metadata (id, name, color, x, y, direction) → stays in frontend forever.
-// [BACKEND #2] temp / humid / hasData → GET /api/sensor-readings/p1f1/current
 const MAP_SENSORS = [
   { id: "aoi",         name: "AOI",                color: "#f5c518", x: 78.9,  y: 52.8, direction: "bottom", temp: 24.50, humid: 62.10, hasData: true  },
   { id: "dipping2",    name: "Dipping2",           color: "#1e90ff", x: 53,    y: 48.5,                      temp: 22.40, humid: 60.80, hasData: true  },
@@ -107,19 +71,23 @@ const MAP_SENSORS = [
 
 const DESSICATOR_ZONE = { x: 11.5, y: 82 };
 
-// [BACKEND #3] temp / humid / hasData → GET /api/sensor-readings/p1f1/dessicators
 const DESSICATOR_SENSORS = [
   { id: "dess-1", name: "SMT MH Dessicator 1", temp: 21.90, humid: 44.40, hasData: true  },
-  { id: "dess-2", name: "SMT MH Dessicator 2", temp: 22.20, humid: 52.30, hasData: true  }, // breach: 52.3 > humidUL 50
-  { id: "dess-3", name: "SMT MH Dessicator 3", temp: 22.20, humid: 55.70, hasData: true  }, // breach: 55.7 > humidUL 50
+  { id: "dess-2", name: "SMT MH Dessicator 2", temp: 22.20, humid: 52.30, hasData: true  },
+  { id: "dess-3", name: "SMT MH Dessicator 3", temp: 22.20, humid: 55.70, hasData: true  },
   { id: "dess-4", name: "SMT MH Dessicator 4", temp: 21.30, humid: 47.80, hasData: true  },
   { id: "dess-5", name: "SMT MH Dessicator 5", temp: 21.30, humid: 37.50, hasData: true  },
   { id: "dess-6", name: "SMT MH Dessicator 6", temp: null,  humid: null,  hasData: false },
 ];
 
+const ALL_EDITABLE_SENSORS = [
+  ...MAP_SENSORS.map(s        => ({ id: s.id, name: s.name, group: "Sensors"     })),
+  ...DESSICATOR_SENSORS.map(s => ({ id: s.id, name: s.name, group: "Dessicators" })),
+];
+
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 2: PURE UTILITY FUNCTIONS
+// SECTION 2: UTILITY
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getSensorLimits(sensorId, allLimits) {
@@ -131,8 +99,7 @@ function getPaneStatus(sensor, allLimits) {
   const lim = getSensorLimits(sensor.id, allLimits);
   const tempBreach  = sensor.temp  > lim.tempUL  || sensor.temp  < lim.tempLL;
   const humidBreach = sensor.humid > lim.humidUL || sensor.humid < lim.humidLL;
-  if (tempBreach || humidBreach) return "breach";
-  return "ok";
+  return (tempBreach || humidBreach) ? "breach" : "ok";
 }
 
 const STATUS_STYLES = {
@@ -151,23 +118,235 @@ function getPaneDirection(sensor) {
 }
 
 function getDessicatorZoneStatus(allLimits) {
-  if (DESSICATOR_SENSORS.every((s) => !s.hasData)) return "no-data";
-  if (DESSICATOR_SENSORS.some((s) => getPaneStatus(s, allLimits) === "breach")) return "breach";
+  if (DESSICATOR_SENSORS.every(s => !s.hasData)) return "no-data";
+  if (DESSICATOR_SENSORS.some(s => getPaneStatus(s, allLimits) === "breach")) return "breach";
   return "ok";
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3: LIMITS MODAL  (per-sensor, two-panel layout)
+// SECTION 3: SENSOR LIMITS MODAL CONTENT
+//
+// Used inside <CustomModal fixedLayout height="80vh"> which renders ONLY the
+// Dialog shell (backdrop, rounded box, close button × — no header, no padding).
+// This component fully owns:
+//   • Pinned header  (title + subtitle row)
+//   • Scrollable two-panel body (left sensor list, right edit panel)
+//   • Pinned footer  (Cancel + Save All)
+//
+// The layout works because the outer DialogContent is:
+//   display:flex; flex-direction:column; height:80vh; overflow:hidden; padding:0
+// and this component's three direct children are:
+//   header  → flexShrink:0 (never shrinks)
+//   body    → flex:1; minHeight:0; overflow:hidden inside; panels scroll
+//   footer  → flexShrink:0 (never shrinks)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALL_EDITABLE_SENSORS = [
-  ...MAP_SENSORS.map((s)        => ({ id: s.id, name: s.name, group: "Sensors"     })),
-  ...DESSICATOR_SENSORS.map((s) => ({ id: s.id, name: s.name, group: "Dessicators" })),
-];
+function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
+  const [draft,    setDraft]    = useState(() =>
+    Object.fromEntries(
+      sensors.map(({ id }) => [id, { ...(allLimits[id] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }) }])
+    )
+  );
+  const [errors,   setErrors]   = useState({});
+  const [activeId, setActiveId] = useState(sensors[0]?.id);
+  const [saving,   setSaving]   = useState(false);
+  const [apiError, setApiError] = useState(null);
+
+  const setField = (sensorId, key, val) => {
+    setDraft(prev => ({ ...prev, [sensorId]: { ...prev[sensorId], [key]: val } }));
+    setErrors(prev => { const n = { ...prev }; delete n[`${sensorId}.${key}`]; return n; });
+    setApiError(null);
+  };
+
+  const validate = () => {
+    const e = {}; const parsed = {};
+    for (const { id } of sensors) {
+      const row = draft[id]; parsed[id] = {};
+      for (const key of ["tempUL", "tempLL", "humidUL", "humidLL"]) {
+        const num = parseFloat(row?.[key]);
+        if (isNaN(num)) { e[`${id}.${key}`] = "Required"; continue; }
+        parsed[id][key] = num;
+      }
+      if (!e[`${id}.tempLL`]  && !e[`${id}.tempUL`]  && parsed[id].tempLL  >= parsed[id].tempUL)  e[`${id}.tempLL`]  = "LL must be < UL";
+      if (!e[`${id}.humidLL`] && !e[`${id}.humidUL`] && parsed[id].humidLL >= parsed[id].humidUL) e[`${id}.humidLL`] = "LL must be < UL";
+    }
+    return { errors: e, parsed };
+  };
+
+  // [BACKEND #4] → POST /api/limits/p1f1/per-sensor
+  const handleSaveLimits = async () => {
+    const { errors: e, parsed } = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setSaving(true); setApiError(null);
+    try {
+      // ── [BACKEND] uncomment when ready ───────────────────────────────────
+      // const res  = await fetch("/api/limits/p1f1/per-sensor", {
+      //   method: "POST", headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify({ limits: parsed }),
+      // });
+      // const json = await res.json();
+      // if (!res.ok || !json.ok) throw new Error(json.message ?? "Save failed");
+      await new Promise(r => setTimeout(r, 600));
+      onSave(parsed);
+      onClose();
+    } catch (err) {
+      setApiError(err.message ?? "Something went wrong. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasRowError = id =>
+    ["tempUL", "tempLL", "humidUL", "humidLL"].some(k => errors[`${id}.${k}`]);
+
+  const NumField = ({ sensorId, fieldKey, label, unit }) => {
+    const err = errors[`${sensorId}.${fieldKey}`];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</label>
+        <div style={{ position: "relative" }}>
+          <input
+            type="number"
+            value={draft[sensorId]?.[fieldKey] ?? ""}
+            onChange={e => setField(sensorId, fieldKey, e.target.value)}
+            disabled={saving}
+            style={{
+              width: "100%", padding: "7px 26px 7px 9px", borderRadius: 6, fontSize: 13,
+              border: `1.5px solid ${err ? "#dc3545" : "#dee2e6"}`,
+              background: err ? "#fff5f5" : saving ? "#f8f9fa" : "#fff",
+              outline: "none", boxSizing: "border-box", opacity: saving ? 0.7 : 1,
+            }}
+          />
+          <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#adb5bd", pointerEvents: "none" }}>{unit}</span>
+        </div>
+        {err && <span className="text-xs text-destructive">{err}</span>}
+      </div>
+    );
+  };
+
+  const activeSensor = sensors.find(s => s.id === activeId);
+  const groups = [...new Set(sensors.map(s => s.group))];
+
+  return (
+    // Outer wrapper fills the full DialogContent box (flex column, height:80vh)
+    // Three children: header (shrink:0), body (flex:1 min-h:0), footer (shrink:0)
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+
+      {/* ── PINNED HEADER ── */}
+      <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid #e9ecef", flexShrink: 0 }}>
+        <p className="text-base font-semibold">Adjust Sensor Limits</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Plant 1 Floor 1 · Each sensor has its own threshold</p>
+      </div>
+
+      {/* ── SCROLLABLE TWO-PANEL BODY ── */}
+      {/* minHeight:0 is the critical rule — without it flex children won't shrink
+          below their content size, so the footer gets pushed out of the box     */}
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+
+        {/* Left — sensor list, scrolls independently */}
+        <div style={{ width: 180, flexShrink: 0, borderRight: "1px solid #e9ecef", overflowY: "auto", padding: "8px 0" }}>
+          {groups.map(group => {
+            const list = sensors.filter(s => s.group === group);
+            return (
+              <div key={group}>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest" style={{ padding: "10px 16px 4px" }}>
+                  {group}
+                </div>
+                {list.map(({ id, name }) => (
+                  <div
+                    key={id}
+                    onClick={() => !saving && setActiveId(id)}
+                    style={{
+                      padding: "9px 16px", cursor: saving ? "default" : "pointer",
+                      background: id === activeId ? "rgba(67,94,190,.08)" : "transparent",
+                      borderLeft: `3px solid ${id === activeId ? "#435ebe" : "transparent"}`,
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      transition: "background .1s",
+                    }}
+                    className={`text-sm ${id === activeId ? "font-semibold" : ""}`}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    {hasRowError(id) && <span className="text-destructive" style={{ fontSize: 16, marginLeft: 4, lineHeight: 1 }}>•</span>}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Right — edit panel, scrolls independently */}
+        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24, background: "#fff" }}>
+          <p className="text-base font-semibold">{activeSensor?.name}</p>
+
+          <div>
+            <p className="text-sm font-medium mb-3">Temperature</p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <NumField sensorId={activeId} fieldKey="tempLL" label="Lower Limit" unit="°C" />
+              <NumField sensorId={activeId} fieldKey="tempUL" label="Upper Limit" unit="°C" />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium mb-3">Humidity</p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <NumField sensorId={activeId} fieldKey="humidLL" label="Lower Limit" unit="%" />
+              <NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" />
+            </div>
+          </div>
+
+          {/* Quick apply — copies active sensor limits to all in the same group */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
+            {groups.map(group => {
+              const list = sensors.filter(s => s.group === group);
+              if (!list.find(s => s.id === activeId)) return null;
+              return (
+                <Button
+                  key={group}
+                  type="button"
+                  size="default"
+                  variant="default"
+                  className="cursor-pointer"
+                  disabled={saving}
+                  onClick={() => {
+                    const src = draft[activeId];
+                    setDraft(prev => {
+                      const next = { ...prev };
+                      list.forEach(({ id }) => { next[id] = { ...src }; });
+                      return next;
+                    });
+                  }}
+                >
+                  Apply to all {group.toLowerCase()}
+                </Button>
+              );
+            })}
+          </div>
+
+          {apiError && (
+            <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">
+              {apiError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── PINNED FOOTER ── */}
+      <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
+        {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
+        <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving}>
+          {saving ? "Saving…" : "Save All"}
+        </Button>
+      </div>
+
+    </div>
+  );
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4: REUSABLE UI COMPONENTS
+// SECTION 4: MAP UI COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SensorPane({ sensor, allLimits }) {
@@ -189,7 +368,7 @@ function SensorPane({ sensor, allLimits }) {
           </div>
         </>
       ) : (
-        <div style={{ fontSize: 12, opacity: .75 }}>No data available</div>
+        <div style={{ fontSize: 12, opacity: 0.75 }}>No data available</div>
       )}
     </div>
   );
@@ -208,10 +387,10 @@ function SensorMarker({ sensor, selected, onToggle, allLimits }) {
     right:  { ...arrowBase, left:   -13, top:  "50%", transform: "translateY(-50%)", borderRightColor:  STATUS_STYLES[status].border, borderLeft:   "none" },
   };
   const panePos = {
-    top:    { bottom: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)" },
-    bottom: { top:    "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)" },
-    left:   { right:  "calc(100% + 10px)", top:  "50%", transform: "translateY(-50%)" },
-    right:  { left:   "calc(100% + 10px)", top:  "50%", transform: "translateY(-50%)" },
+    top:    { bottom: "calc(100% + 10px)", left: "50%",  transform: "translateX(-50%)" },
+    bottom: { top:    "calc(100% + 10px)", left: "50%",  transform: "translateX(-50%)" },
+    left:   { right:  "calc(100% + 10px)", top:  "50%",  transform: "translateY(-50%)" },
+    right:  { left:   "calc(100% + 10px)", top:  "50%",  transform: "translateY(-50%)" },
   };
 
   return (
@@ -231,7 +410,7 @@ function SensorMarker({ sensor, selected, onToggle, allLimits }) {
 
 function DessicatorZoneMarker({ open, onToggle, allLimits }) {
   const zoneStatus  = getDessicatorZoneStatus(allLimits);
-  const breachCount = DESSICATOR_SENSORS.filter((s) => getPaneStatus(s, allLimits) === "breach").length;
+  const breachCount = DESSICATOR_SENSORS.filter(s => getPaneStatus(s, allLimits) === "breach").length;
   const dotColor    = STATUS_STYLES[zoneStatus].border;
 
   return (
@@ -243,13 +422,12 @@ function DessicatorZoneMarker({ open, onToggle, allLimits }) {
           <span style={{ fontSize: 9, fontWeight: 700, background: "#dc3545", color: "#fff", borderRadius: 8, padding: "1px 4px", marginLeft: 2 }}>{breachCount}</span>
         )}
       </div>
-
       {open && (
         <div style={{ position: "absolute", bottom: "calc(100% + -150px)", left: "-32%", transform: "translateY(-50%)", zIndex: 35, background: "#fff", border: "1.5px solid #dee2e6", borderRadius: 10, padding: "10px 12px", boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 220, pointerEvents: "none" }}>
           <div style={{ position: "absolute", bottom: -8, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "8px solid #dee2e6" }} />
           <div style={{ position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "7px solid #fff" }} />
           <div style={{ fontSize: 10, fontWeight: 700, color: "#adb5bd", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>Dessicators</div>
-          {DESSICATOR_SENSORS.map((s) => {
+          {DESSICATOR_SENSORS.map(s => {
             const st  = getPaneStatus(s, allLimits);
             const ss  = STATUS_STYLES[st];
             const lim = getSensorLimits(s.id, allLimits);
@@ -258,7 +436,7 @@ function DessicatorZoneMarker({ open, onToggle, allLimits }) {
                 <div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: ss.text }}>{s.name}</div>
                   {s.hasData
-                    ? <div style={{ fontSize: 10, color: "#6c757d" }}>{s.temp?.toFixed(1)}°C · {s.humid?.toFixed(1)}% <span style={{ opacity: .6 }}>(H≤{lim.humidUL}%)</span></div>
+                    ? <div style={{ fontSize: 10, color: "#6c757d" }}>{s.temp?.toFixed(1)}°C · {s.humid?.toFixed(1)}% <span style={{ opacity: 0.6 }}>(H≤{lim.humidUL}%)</span></div>
                     : <div style={{ fontSize: 10, color: "#adb5bd" }}>No data</div>
                   }
                 </div>
@@ -275,9 +453,12 @@ function DessicatorZoneMarker({ open, onToggle, allLimits }) {
 function SensorListItem({ sensor, selected, onToggle, allLimits }) {
   const statusDot = STATUS_STYLES[getPaneStatus(sensor, allLimits)].dot;
   return (
-    <div onClick={() => onToggle(sensor.id)} className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer" style={{ background: "transparent", userSelect: "none" }}
-      onMouseEnter={(e) => { e.currentTarget.style.background = "#f3f4f6"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}
+    <div
+      onClick={() => onToggle(sensor.id)}
+      className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer"
+      style={{ background: "transparent", userSelect: "none" }}
+      onMouseEnter={e => { e.currentTarget.style.background = "#f3f4f6"; }}
+      onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}
     >
       <div style={{ width: 16, height: 16, flexShrink: 0, border: `2px solid ${selected ? "#435ebe" : "#adb5bd"}`, borderRadius: 3, background: selected ? "#435ebe" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {selected && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
@@ -303,7 +484,7 @@ function DessicatorCard({ sensor, allLimits }) {
           <div style={{ fontSize: 12 }}>Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong></div>
         </>
       ) : (
-        <div style={{ fontSize: 12, opacity: .75 }}>No data available</div>
+        <div style={{ fontSize: 12, opacity: 0.75 }}>No data available</div>
       )}
     </div>
   );
@@ -319,17 +500,13 @@ export default function P1F1MapPage() {
   const [dessOpen,    setDessOpen]    = useState(false);
   const [limitsOpen,  setLimitsOpen]  = useState(false);
 
-  /**
-   * Live per-sensor limits state — seeded from DEFAULT_SENSOR_LIMITS.
-   * TO REPLACE seed value with data fetched from backend.
-   */
   const [allLimits, setAllLimits] = useState({ ...DEFAULT_SENSOR_LIMITS });
 
-  const allIds           = MAP_SENSORS.map((s) => s.id);
+  const allIds           = MAP_SENSORS.map(s => s.id);
   const allSelected      = selectedIds.size === allIds.length;
   const totalActiveCount = MAP_SENSORS.filter(s => s.hasData).length;
 
-  const toggle    = (id) => setSelectedIds((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const toggle    = id => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(allIds));
 
   return (
@@ -337,45 +514,28 @@ export default function P1F1MapPage() {
 
       {/* ── LEFT PANEL ── */}
       <aside style={{ width: 260, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-
         <div style={{ padding: "16px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
           <h1 className="text-2xl font-bold">Line Name</h1>
-
-          {/* Select all button */}
-          <Button
-            type="button"
-            size="default"
-            variant={allSelected ? "outline" : "default"}
-            className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer"
-            onClick={toggleAll}
-          >
+          <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>
             {allSelected ? "Deselect All" : "Select All"}
           </Button>
-
-          {/* Adjust Limits button */}
-          <Button
-            type="button"
-            size="default"
-            variant={limitsOpen ? "outline" : "default"}
-            className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer"
-            onClick={() => setLimitsOpen(true)}
-          >
-            <span>Adjust Limits</span>
+          <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={() => setLimitsOpen(true)}>
+            Adjust Sensor Limits
           </Button>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "8px" }}>
           <div className="text-sm px-1 pt-2 pb-1">Sensors</div>
-          {MAP_SENSORS.map((s) => (
+          {MAP_SENSORS.map(s => (
             <SensorListItem key={s.id} sensor={s} selected={selectedIds.has(s.id)} onToggle={toggle} allLimits={allLimits} />
           ))}
         </div>
 
         <div style={{ padding: "10px 16px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
           {[
-            { color: STATUS_STYLES["ok"].dot,      label: "Within limits"  },
-            { color: STATUS_STYLES["breach"].dot,   label: "Limit breached" },
-            { color: STATUS_STYLES["no-data"].dot,  label: "No data"        },
+            { color: STATUS_STYLES["ok"].dot,     label: "Within limits"  },
+            { color: STATUS_STYLES["breach"].dot,  label: "Limit breached" },
+            { color: STATUS_STYLES["no-data"].dot, label: "No data"        },
           ].map(({ color, label }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
               <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
@@ -395,19 +555,19 @@ export default function P1F1MapPage() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 20, overflow: "visible", borderRadius: 5 }}>
           <div
             style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid #e9ecef" }}
-            onClick={(e) => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}
+            onClick={e => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}
           >
             <img src={FLOOR_PLAN_IMAGE} alt="P1F1 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
-            {MAP_SENSORS.map((sensor) => (
+            {MAP_SENSORS.map(sensor => (
               <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} allLimits={allLimits} />
             ))}
-            <DessicatorZoneMarker open={dessOpen} onToggle={() => setDessOpen((v) => !v)} allLimits={allLimits} />
+            <DessicatorZoneMarker open={dessOpen} onToggle={() => setDessOpen(v => !v)} allLimits={allLimits} />
           </div>
 
           <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "10px 16px", flexShrink: 0 }}>
             <div className="text-sm mb-2">Dessicators</div>
             <div style={{ display: "flex", gap: 10, overflowX: "auto" }}>
-              {DESSICATOR_SENSORS.map((s) => (
+              {DESSICATOR_SENSORS.map(s => (
                 <DessicatorCard key={s.id} sensor={s} allLimits={allLimits} />
               ))}
             </div>
@@ -415,14 +575,29 @@ export default function P1F1MapPage() {
         </div>
       </div>
 
-      {/* ── LIMITS MODAL ── */}
-      <SensorLimitsModal
+      {/* ── SENSOR LIMITS MODAL ──
+          fixedLayout={true} tells CustomModal to render ONLY the Dialog shell
+          (backdrop, rounded box, close ×). No header, no padding, no footer
+          are added by CustomModal. SensorLimitsContent owns all of that.
+
+          height="80vh" sets the DialogContent to a fixed 80% of viewport height.
+          size="xl" gives sm:max-w-4xl width.
+      ── */}
+      <CustomModal
         open={limitsOpen}
-        onOpenChange={setLimitsOpen}
-        allLimits={allLimits}
-        onSave={(newLimits) => setAllLimits(newLimits)}
-        sensors={ALL_EDITABLE_SENSORS}
-      />
+        onOpenChange={open => { if (!open) setLimitsOpen(false); }}
+        title="Adjust Sensor Limits"
+        size="lg"
+        fixedLayout
+      >
+        <SensorLimitsContent
+          allLimits={allLimits}
+          onSave={newLimits => setAllLimits(newLimits)}
+          onClose={() => setLimitsOpen(false)}
+          sensors={ALL_EDITABLE_SENSORS}
+        />
+      </CustomModal>
+
     </div>
   );
 }
