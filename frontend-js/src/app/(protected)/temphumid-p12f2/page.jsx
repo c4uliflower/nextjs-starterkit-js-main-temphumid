@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { SensorLimitsModal } from "@/components/custom/CustomModal";
+import { CustomModal } from "@/components/custom/CustomModal";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -70,7 +70,14 @@ const MAP_SENSORS = [
   { id: "p1p2-bridge", name: "P1P2_Bridge", color: "#dc3545", x: 23, y: 41.5, temp: 25.40, humid: 65.10, direction: "right", hasData: true },
 ];
 
+// No dessicators on P12F2
 const DESSICATOR_SENSORS = [];
+
+// Sensor list passed to SensorLimitsContent — built from page metadata
+const ALL_EDITABLE_SENSORS = [
+  ...MAP_SENSORS.map(s        => ({ id: s.id, name: s.name, group: "Sensors"     })),
+  ...DESSICATOR_SENSORS.map(s => ({ id: s.id, name: s.name, group: "Dessicators" })),
+];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 2: PURE UTILITY FUNCTIONS
@@ -105,13 +112,244 @@ function getPaneDirection(sensor) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3: LIMITS MODAL
-// Handled by SensorLimitsModal in CustomModal.jsx — imported above.
+// SECTION 3: SENSOR LIMITS MODAL CONTENT
+//
+// WHAT MOVED HERE (was inside SensorLimitsModal in CustomModal.jsx):
+//   • draft state       — in-progress edits for all sensors
+//   • errors state      — per-field validation errors
+//   • activeId state    — which sensor is selected in the left panel
+//   • saving state      — tracks POST request lifecycle
+//   • apiError state    — surfaces server-side errors
+//   • setField()        — updates draft + clears field error
+//   • validate()        — client-side LL < UL check
+//   • handleSaveLimits()— validates → POST → onSave() → onClose()
+//   • hasRowError()     — checks if a row has any validation error
+//   • NumField          — number input with unit label + error display
+//   • The full two-panel JSX (left sensor list + right edit panel + footer)
+//
+// WHY it lives here and not in CustomModal:
+//   CustomModal is a reusable shell — it should not know about sensor IDs,
+//   limit fields, or floor-specific API endpoints. Keeping this content here
+//   means you can have different limit modals per floor with different sensors,
+//   limits, and API endpoints, all using the same CustomModal wrapper.
+//
+// Props:
+//   allLimits  — { [sensorId]: { tempUL, tempLL, humidUL, humidLL } }
+//   onSave     — (newLimits) => void — called only after confirmed save
+//   onClose    — () => void — closes the modal
+//   sensors    — ALL_EDITABLE_SENSORS from this page
 // ─────────────────────────────────────────────────────────────────────────────
 
-const ALL_EDITABLE_SENSORS = [
-  ...MAP_SENSORS.map((s) => ({ id: s.id, name: s.name, group: "Sensors" })),
-];
+function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
+  const [draft, setDraft] = useState(() =>
+    Object.fromEntries(
+      sensors.map(({ id }) => [id, { ...(allLimits[id] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }) }])
+    )
+  );
+  const [errors,   setErrors]   = useState({});
+  const [activeId, setActiveId] = useState(sensors[0]?.id);
+  const [saving,   setSaving]   = useState(false);
+  const [apiError, setApiError] = useState(null);
+
+  const setField = (sensorId, key, val) => {
+    setDraft(prev => ({ ...prev, [sensorId]: { ...prev[sensorId], [key]: val } }));
+    setErrors(prev => { const n = { ...prev }; delete n[`${sensorId}.${key}`]; return n; });
+    setApiError(null);
+  };
+
+  // Client-side validation — instant feedback only.
+  // Backend must also validate as the source of truth.
+  const validate = () => {
+    const e = {}; const parsed = {};
+    for (const { id } of sensors) {
+      const row = draft[id]; parsed[id] = {};
+      for (const key of ["tempUL", "tempLL", "humidUL", "humidLL"]) {
+        const num = parseFloat(row?.[key]);
+        if (isNaN(num)) { e[`${id}.${key}`] = "Required"; continue; }
+        parsed[id][key] = num;
+      }
+      if (!e[`${id}.tempLL`]  && !e[`${id}.tempUL`]  && parsed[id].tempLL  >= parsed[id].tempUL)  e[`${id}.tempLL`]  = "LL must be < UL";
+      if (!e[`${id}.humidLL`] && !e[`${id}.humidUL`] && parsed[id].humidLL >= parsed[id].humidUL) e[`${id}.humidLL`] = "LL must be < UL";
+    }
+    return { errors: e, parsed };
+  };
+
+  // [BACKEND #4] → POST /api/limits/p12f2/per-sensor
+  const handleSaveLimits = async () => {
+    const { errors: e, parsed } = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    setSaving(true); setApiError(null);
+    try {
+      // ── [BACKEND] uncomment + remove setTimeout when backend is ready ─────
+      // const res  = await fetch("/api/limits/p12f2/per-sensor", {
+      //   method:  "POST",
+      //   headers: { "Content-Type": "application/json" },
+      //   body:    JSON.stringify({ limits: parsed }),
+      // });
+      // const json = await res.json();
+      // if (!res.ok || !json.ok) throw new Error(json.message ?? "Save failed");
+      await new Promise(r => setTimeout(r, 600)); // temp stub
+      onSave(parsed);
+      onClose();
+    } catch (err) {
+      setApiError(err.message ?? "Something went wrong. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const hasRowError = id =>
+    ["tempUL", "tempLL", "humidUL", "humidLL"].some(k => errors[`${id}.${k}`]);
+
+  // Number input with unit label + inline error
+  const NumField = ({ sensorId, fieldKey, label, unit }) => {
+    const err = errors[`${sensorId}.${fieldKey}`];
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
+        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</label>
+        <div style={{ position: "relative" }}>
+          <input
+            type="number"
+            value={draft[sensorId]?.[fieldKey] ?? ""}
+            onChange={e => setField(sensorId, fieldKey, e.target.value)}
+            disabled={saving}
+            style={{
+              width: "100%", padding: "7px 26px 7px 9px", borderRadius: 6, fontSize: 13,
+              border: `1.5px solid ${err ? "#dc3545" : "#dee2e6"}`,
+              background: err ? "#fff5f5" : saving ? "#f8f9fa" : "#fff",
+              outline: "none", boxSizing: "border-box", opacity: saving ? 0.7 : 1,
+            }}
+          />
+          <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#adb5bd", pointerEvents: "none" }}>{unit}</span>
+        </div>
+        {err && <span className="text-xs text-destructive">{err}</span>}
+      </div>
+    );
+  };
+
+  const activeSensor = sensors.find(s => s.id === activeId);
+  const groups = [...new Set(sensors.map(s => s.group))];
+
+  // This content is rendered inside <CustomModal className="p-0 gap-0 overflow-hidden flex flex-col" style={{ height: "80vh" }}>.
+  // That className strips CustomModal's default padding so this two-panel layout
+  // can control every pixel — pinned header, scrollable left/right panels, pinned footer.
+  // minHeight:0 on the body row is critical: without it, flex children default to
+  // min-height:auto and push the footer outside the modal box.
+  return (
+    // Outer wrapper fills the full DialogContent box (flex column, height:80vh)
+    // Three children: header (shrink:0), body (flex:1 min-h:0), footer (shrink:0)
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+
+      {/* ── PINNED HEADER ── */}
+      <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid #e9ecef", flexShrink: 0 }}>
+        <p className="text-base font-semibold">Adjust Sensor Limits</p>
+        <p className="text-sm text-muted-foreground mt-0.5">Plant 1 and 2 Floor 2 · Each sensor has its own threshold</p>
+      </div>
+
+      {/* ── SCROLLABLE TWO-PANEL BODY ── */}
+      {/* minHeight:0 is the critical rule — without it flex children won't shrink
+          below their content size, so the footer gets pushed out of the box     */}
+      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+
+        {/* Left — sensor list, scrolls independently */}
+        <div style={{ width: 180, flexShrink: 0, borderRight: "1px solid #e9ecef", overflowY: "auto", padding: "8px 0" }}>
+          {groups.map(group => {
+            const list = sensors.filter(s => s.group === group);
+            return (
+              <div key={group}>
+                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest" style={{ padding: "10px 16px 4px" }}>
+                  {group}
+                </div>
+                {list.map(({ id, name }) => (
+                  <div
+                    key={id}
+                    onClick={() => !saving && setActiveId(id)}
+                    style={{
+                      padding: "9px 16px", cursor: saving ? "default" : "pointer",
+                      background: id === activeId ? "rgba(67,94,190,.08)" : "transparent",
+                      borderLeft: `3px solid ${id === activeId ? "#435ebe" : "transparent"}`,
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      transition: "background .1s",
+                    }}
+                    className={`text-sm ${id === activeId ? "font-semibold" : ""}`}
+                  >
+                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
+                    {hasRowError(id) && <span className="text-destructive" style={{ fontSize: 16, marginLeft: 4, lineHeight: 1 }}>•</span>}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Right — edit panel, scrolls independently */}
+        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24, background: "#fff" }}>
+          <p className="text-base font-semibold">{activeSensor?.name}</p>
+
+          <div>
+            <p className="text-sm font-medium mb-3">Temperature</p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <NumField sensorId={activeId} fieldKey="tempLL" label="Lower Limit" unit="°C" />
+              <NumField sensorId={activeId} fieldKey="tempUL" label="Upper Limit" unit="°C" />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-sm font-medium mb-3">Humidity</p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <NumField sensorId={activeId} fieldKey="humidLL" label="Lower Limit" unit="%" />
+              <NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" />
+            </div>
+          </div>
+
+          {/* Quick apply — copies active sensor limits to all in the same group */}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
+            {groups.map(group => {
+              const list = sensors.filter(s => s.group === group);
+              if (!list.find(s => s.id === activeId)) return null;
+              return (
+                <Button
+                  key={group}
+                  type="button"
+                  size="default"
+                  variant="default"
+                  className="cursor-pointer"
+                  disabled={saving}
+                  onClick={() => {
+                    const src = draft[activeId];
+                    setDraft(prev => {
+                      const next = { ...prev };
+                      list.forEach(({ id }) => { next[id] = { ...src }; });
+                      return next;
+                    });
+                  }}
+                >
+                  Apply to all {group.toLowerCase()}
+                </Button>
+              );
+            })}
+          </div>
+
+          {apiError && (
+            <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">
+              {apiError}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── PINNED FOOTER ── */}
+      <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
+        {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
+        <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving}>
+          {saving ? "Saving…" : "Save All"}
+        </Button>
+      </div>
+
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 4: REUSABLE UI COMPONENTS
@@ -240,7 +478,7 @@ export default function P1and2F2MapPage() {
             className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer"
             onClick={() => setLimitsOpen(true)}
           >
-            Adjust Limits
+            Adjust Sensor Limits
           </Button>
         </div>
 
@@ -279,13 +517,28 @@ export default function P1and2F2MapPage() {
           
         </div>
       </div>
-      <SensorLimitsModal
+      {/* ── SENSOR LIMITS MODAL ── */}
+      {/*
+        size="xl" gives us sm:max-w-4xl width.
+        className overrides pad/gap to zero and forces fixed height so the
+        two-panel layout inside SensorLimitsContent works correctly.
+        The content component handles its own header text, scrollable panels,
+        and pinned footer — CustomModal only provides the Dialog shell.
+      */}
+      <CustomModal
         open={limitsOpen}
-        onOpenChange={setLimitsOpen}
-        allLimits={allLimits}
-        onSave={(newLimits) => setAllLimits(newLimits)}
-        sensors={ALL_EDITABLE_SENSORS}
-      />
+        onOpenChange={open => { if (!open) setLimitsOpen(false); }}
+        title="Adjust Sensor Limits"
+        size="lg"
+        fixedLayout
+      >
+        <SensorLimitsContent
+          allLimits={allLimits}
+          onSave={newLimits => setAllLimits(newLimits)}
+          onClose={() => setLimitsOpen(false)}
+          sensors={ALL_EDITABLE_SENSORS}
+        />
+      </CustomModal>
     </div>
   );
 }
