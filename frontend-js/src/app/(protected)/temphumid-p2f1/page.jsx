@@ -75,17 +75,39 @@ const DEFAULT_SENSOR_LIMITS = {
   "wo-w-south-qa":    { tempUL: 30, tempLL: 15, humidUL: 85, humidLL: 35 },
 };
 
+// ─── activeLocation ────────────────────────────────────────────────────────
+// Sourced from the "Active Location?" column in the Excel / DB.
+// Area ID → Active Location?
+//   P1F1-01 Dipping          → Y
+//   P1F1-02 SMT              → Y
+//   P1F1-03 Server Room      → Y  (no Area listed, kept Y)
+//   P1F1-04 AOI              → Y
+//   P1F1-05 SMT MH           → Y
+//   P1F1-06 Dipping2         → Y
+//   P1F1-07 SMT MH Dess 2    → Y
+//   P1F1-09 SMT MH Dess 1    → Y
+//   P1F1-10 SMT Cold Storage → Y  (location P1F1C)
+//   P1F1-11 SMT MH Dess 3    → Y
+//   P1F1-12 SMT MH Dess 4    → Y
+//   P1F1-13 SMT MH Dess 5    → Y
+//   P1F1-14 SMT MH Receiving → Y
+//   P1F1-15 BGA Rework       → Y
+//   P1F1-16 CIS              → Y  (no Area — treat as active)
+//   P1F1-17 Coating          → Y
+// [BACKEND #5] → replace hardcoded values with API response
+// ──────────────────────────────────────────────────────────────────────────
+
 // Metadata (id, name, color, x, y, direction) → stays in frontend forever.
 // [BACKEND #2] temp / humid / hasData → GET /api/sensor-readings/p2f1/current
 const MAP_SENSORS = [
-  { id: "fg",               name: "FG",                      color: "#198754", x: 67,    y: 27.2,                      temp: 23.10, humid: 58.80, hasData: true },
-  { id: "warehouse-office", name: "Warehouse Office",        color: "#ffb6c1", x: 94.2,  y: 69.9,                      temp: 23.80, humid: 60.90, hasData: true },
-  { id: "wh-cs",            name: "WH-Cold Storage",         color: "#b0bec5", x: 94.2,  y: 60.85, direction: "top",   temp: 4.00,  humid: 0.00,  hasData: true },
-  { id: "wh-cs2",           name: "WH-Cold Storage 2",       color: "#78909c", x: 94.3,  y: 78.1,  direction: "bottom",temp: 2.75,  humid: 0.00,  hasData: true },
-  { id: "wo-north",         name: "WO-North",                color: "#f5c518", x: 84.8,  y: 32.8,                      temp: 24.70, humid: 57.80, hasData: true },
-  { id: "wo-south-ha",      name: "WO-South - Holding Area", color: "#1e90ff", x: 20.1,  y: 74.8,                      temp: 25.00, humid: 67.90, hasData: true },
-  { id: "wo-sw-iqc",        name: "WO-S-West-IQC",           color: "#3d5afe", x: 52.7,  y: 40.8,                      temp: 24.00, humid: 63.30, hasData: true },
-  { id: "wo-w-south-qa",    name: "WO-W South-QA",           color: "#dc3545", x: 27.65, y: 39.3,                      temp: 24.30, humid: 60.90, hasData: true },
+  { id: "fg",               name: "FG",                      color: "#198754", x: 67,    y: 27.2,                      temp: 23.10, humid: 58.80, hasData: true, activeLocation: true  },
+  { id: "warehouse-office", name: "Warehouse Office",        color: "#ffb6c1", x: 94.2,  y: 69.9,                      temp: 23.80, humid: 60.90, hasData: true, activeLocation: true  },
+  { id: "wh-cs",            name: "WH-Cold Storage",         color: "#b0bec5", x: 94.2,  y: 60.85, direction: "top",   temp: 4.00,  humid: 0.00,  hasData: true, activeLocation: true  },
+  { id: "wh-cs2",           name: "WH-Cold Storage 2",       color: "#78909c", x: 94.3,  y: 78.1,  direction: "bottom",temp: 2.75,  humid: 0.00,  hasData: true, activeLocation: true  },
+  { id: "wo-north",         name: "WO-North",                color: "#f5c518", x: 84.8,  y: 32.8,                      temp: 24.70, humid: 57.80, hasData: true, activeLocation: true  },
+  { id: "wo-south-ha",      name: "WO-South - Holding Area", color: "#1e90ff", x: 20.1,  y: 74.8,                      temp: 25.00, humid: 67.90, hasData: true, activeLocation: true  },
+  { id: "wo-sw-iqc",        name: "WO-S-West-IQC",           color: "#3d5afe", x: 52.7,  y: 40.8,                      temp: 24.00, humid: 63.30, hasData: true, activeLocation: true  },
+  { id: "wo-w-south-qa",    name: "WO-W South-QA",           color: "#dc3545", x: 27.65, y: 39.3,                      temp: 24.30, humid: 60.90, hasData: true, activeLocation: true  },
 ];
 
 // No dessicators on P2F1
@@ -105,20 +127,54 @@ function getSensorLimits(sensorId, allLimits) {
   return allLimits[sensorId] ?? { tempUL: 30, tempLL: 15, humidUL: 85, humidLL: 35 };
 }
 
+// ─── getPaneStatus ────────────────────────────────────────────────────────────
+// Returns one of four statuses:
+//   "ok"              — within limits (active or inactive area)
+//   "breach"          — exceeds limits AND area is active   → triggers red/alarm
+//   "inactive-breach" — exceeds limits BUT area is inactive → green + badge only
+//   "no-data"         — sensor has no reading
+// ─────────────────────────────────────────────────────────────────────────────
+
 function getPaneStatus(sensor, allLimits) {
   if (!sensor.hasData) return "no-data";
   const lim = getSensorLimits(sensor.id, allLimits);
   const tempBreach  = sensor.temp  > lim.tempUL  || sensor.temp  < lim.tempLL;
   const humidBreach = sensor.humid > lim.humidUL || sensor.humid < lim.humidLL;
-  if (tempBreach || humidBreach) return "breach";
-  return "ok";
+  const isBreaching = tempBreach || humidBreach;
+  if (!isBreaching) return "ok";
+  return sensor.activeLocation ? "breach" : "inactive-breach";
 }
 
 const STATUS_STYLES = {
-  "ok":      { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
-  "breach":  { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
-  "no-data": { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
+  "ok":              { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
+  "breach":          { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
+  "inactive-breach": { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
+  "no-data":         { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
 };
+
+// Small pill badge rendered inside the sensor pane when area is inactive + breaching
+function InactiveAreaBadge() {
+  return (
+    <span style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 3,
+      fontSize: 8,
+      fontWeight: 700,
+      letterSpacing: ".04em",
+      textTransform: "uppercase",
+      background: "#fff8e1",
+      color: "#b08000",
+      border: "1px solid #ffe082",
+      borderRadius: 5,
+      padding: "1px 5px",
+      verticalAlign: "middle",
+      whiteSpace: "nowrap",
+    }}>
+      Inactive Area
+    </span>
+  );
+}
 
 function getPaneDirection(sensor) {
   if (sensor.direction) return sensor.direction;
@@ -378,9 +434,13 @@ function SensorPane({ sensor, allLimits }) {
   const status = getPaneStatus(sensor, allLimits);
   const style  = STATUS_STYLES[status];
   const lim    = getSensorLimits(sensor.id, allLimits);
+  const isInactiveBreach = !sensor.activeLocation;
   return (
     <div style={{ background: style.bg, border: `2px solid ${style.border}`, borderRadius: 8, padding: "8px 12px", minWidth: 155, color: style.text, boxShadow: "0 4px 12px rgba(0,0,0,.18)", pointerEvents: "none", whiteSpace: "nowrap" }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{sensor.name}</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+        {sensor.name}
+        {isInactiveBreach && <InactiveAreaBadge />}
+      </div>
       {sensor.hasData ? (
         <>
           <div style={{ fontSize: 12 }}>
@@ -434,7 +494,8 @@ function SensorMarker({ sensor, selected, onToggle, allLimits }) {
 }
 
 function SensorListItem({ sensor, selected, onToggle, allLimits }) {
-  const statusDot = STATUS_STYLES[getPaneStatus(sensor, allLimits)].dot;
+  const status    = getPaneStatus(sensor, allLimits);
+  const statusDot = STATUS_STYLES[status].dot;
   return (
     <div
       onClick={() => onToggle(sensor.id)}
@@ -448,7 +509,8 @@ function SensorListItem({ sensor, selected, onToggle, allLimits }) {
       </div>
       <div style={{ width: 14, height: 14, flexShrink: 0, background: sensor.color, border: `1.5px solid ${sensor.color === "#ffffff" ? "#adb5bd" : "rgba(0,0,0,.2)"}`, borderRadius: 2 }} />
       <span style={{ fontSize: 13 }}>{sensor.name}</span>
-      <div style={{ marginLeft: "auto", flexShrink: 0 }}>
+      <div style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
+        {!sensor.activeLocation && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#b08000", display: "block" }} title="Inactive area — alarms suppressed" />}
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusDot, display: "block" }} />
       </div>
     </div>
@@ -516,12 +578,16 @@ export default function P2F1MapPage() {
 
         <div style={{ padding: "10px 16px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
           {[
-            { color: STATUS_STYLES["ok"].dot,      label: "Within limits"  },
-            { color: STATUS_STYLES["breach"].dot,   label: "Limit breached" },
-            { color: STATUS_STYLES["no-data"].dot,  label: "No data"        },
-          ].map(({ color, label }) => (
+            { color: STATUS_STYLES["ok"].dot,      label: "Within limits"              },
+            { color: STATUS_STYLES["breach"].dot,   label: "Limit breached"             },
+            { color: STATUS_STYLES["no-data"].dot,  label: "No data"                    },
+            { color: null,                          label: "Inactive area", isText: true },
+          ].map(({ color, label, isText }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              {isText
+                ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#b08000", display: "block", flexShrink: 0 }} />
+                : <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              }
               {label}
             </div>
           ))}

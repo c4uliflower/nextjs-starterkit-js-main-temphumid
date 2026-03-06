@@ -358,7 +358,7 @@ function QrScanner({ onScan, label, onError }) {
 function FormField({ label, value }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12 }}>
-      <div style={{ width: 140, flexShrink: 0, fontSize: 13, color: "#495057" }}>{label}</div>
+      <div style={{ width: 120, flexShrink: 0, fontSize: 13, color: "#495057" }}>{label}</div>
       <div style={{ flex: 1, padding: "7px 12px", background: "#f1f3f5", borderRadius: 5, fontSize: 13, color: value ? "#212529" : "#adb5bd", minHeight: 34 }}>{value || ""}</div>
     </div>
   );
@@ -378,7 +378,7 @@ function ConfirmedChip({ label, color, bg, onClear }) {
   );
 }
 
-function StepBar({ step, total = 3 }) {
+function StepBar({ step, total = 4 }) {
   return (
     <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
       {Array.from({ length: total }).map((_, i) => (
@@ -424,6 +424,13 @@ function EscalationBanner({ record, onDismiss }) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── 7A: START DOWNTIME ───────────────────────────────────────────────────────
+//
+// Flow:
+//   Step 1 — Scan 1: Sensor QR  → validate line name & status (breach / no_data)
+//   Step 2 — Scan 2: Operator QR → capture operator ID
+//   Step 3 — Confirm: show Line Name · Floor, Operator ID, Symptom chips → Queue
+//
+// On confirm → onQueued() → record appears in Stop Line List & Downtime Form panel
 
 function StartDowntimeContent({ onQueued, onClose }) {
   const [step,       setStep]       = useState(1);
@@ -440,6 +447,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
     setSensorInfo(null); setTechInfo(null);
   };
 
+  // ── [BACKEND #4] POST /api/downtime/start ─────────────────────────────────
   const handleQueue = async () => {
     setSaving(true); setApiError(null);
     try {
@@ -451,6 +459,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
     } finally { setSaving(false); }
   };
 
+  // ── Scan 1: validate sensor QR → must be breach or no_data ───────────────
   const handleSensorScan = async rawValue => {
     setScanError1(null);
     setSaving(true);
@@ -464,6 +473,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
     }
   };
 
+  // ── Scan 2: capture operator ID ───────────────────────────────────────────
   const handleTechScan = rawValue => {
     setScanError2(null);
     const result = parseTechnicianQr(rawValue);
@@ -472,12 +482,14 @@ function StartDowntimeContent({ onQueued, onClose }) {
     setStep(3);
   };
 
-  const floorLabel = sensorInfo ? `P${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}` : "";
+  const floorLabel   = sensorInfo ? `P${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}` : "";
+  const symptomLabel = sensorInfo ? (SYMPTOM_LABELS[sensorInfo.status] ?? sensorInfo.status) : "";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <StepBar step={step} />
+      <StepBar step={step} total={3} />
 
+      {/* ── Step 1: Scan sensor QR ── */}
       {step === 1 && (
         <>
           <QrScanner
@@ -503,6 +515,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
         </>
       )}
 
+      {/* ── Step 2: Scan operator QR ── */}
       {step === 2 && sensorInfo && (
         <>
           <ConfirmedChip
@@ -528,6 +541,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
         </>
       )}
 
+      {/* ── Step 3: Confirm — show Line Name, Operator ID, Symptom → Queue ── */}
       {step === 3 && sensorInfo && techInfo && (
         <>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -542,7 +556,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
               onClear={() => { setTechInfo(null); setScanError2(null); setStep(2); }}
             />
             <ConfirmedChip
-              label={`Symptom: ${SYMPTOM_LABELS[sensorInfo.status]}`}
+              label={`Symptom: ${symptomLabel}`}
               color="#fff" bg="#dc3545"
             />
           </div>
@@ -577,6 +591,7 @@ function MarkDoneContent({ record, onDone, onClose }) {
     setConfirmedTech(null);
   };
 
+  // ── [BACKEND #6] POST /api/downtime/resolve/:id ───────────────────────────
   const handleConfirm = async () => {
     if (!outcome || !reason) return;
     setSaving(true); setApiError(null);
@@ -675,6 +690,7 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
   const [saving,   setSaving]   = useState(false);
   const [apiError, setApiError] = useState(null);
 
+  // ── [BACKEND #7] POST /api/downtime/upload ────────────────────────────────
   const handleUpload = async () => {
     setSaving(true); setApiError(null);
     try {
@@ -695,9 +711,9 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
             return (
               <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", border: "1px solid #e9ecef", borderRadius: 5 }}>
                 <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5, background: oc.solid, color: oc.text, textTransform: "uppercase", letterSpacing: ".04em", flexShrink: 0 }}>{oc.label}</span>
-                <span className="text-sm font-semibold">{r.sensorName}</span>
-                <span className="text-muted-foreground" style={{ fontSize: 11 }}>{r.floor}</span>
-                <span className="text-muted-foreground" style={{ fontSize: 11, marginLeft: "auto" }}>{r.reason1}</span>
+                <span className="text-sm font-semibold" style={{ flex: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{r.sensorName}</span>
+                <span className="text-muted-foreground" style={{ fontSize: 11, flexShrink: 0 }}>{r.floor}</span>
+                <span className="text-muted-foreground" style={{ fontSize: 11, flexShrink: 0 }}>{r.reason1}</span>
               </div>
             );
           })
@@ -791,18 +807,24 @@ function StopLineListPanel({ records, onRowClick, onStartDowntime, escalatedIds,
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 10: DOWNTIME FORM PANEL
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Live preview of what will be committed to the maintenance history table.
+// Fields: Symptom / Line Name / Location / Operator — filled on Start Downtime
+//         Outcome / Reason / Duration / Resolved    — snapshot filled on Mark Done
+// All fields clear on Upload Downtime.
 
 function DowntimeFormPanel({ formData, symptom }) {
   return (
     <div style={{ flex: 1, background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "20px 24px" }}>
       <p className="font-bold text-center mb-5">Downtime Form</p>
-      <FormField label="Symptom:"          value={symptom}                />
-      <FormField label="Sensor / Line QR:" value={formData.sensorId}      />
-      <FormField label="Sensor Name:"      value={formData.sensorName}    />
-      <FormField label="Floor:"            value={formData.floor}         />
-      <FormField label="Location:"         value={formData.location}      />
-      <FormField label="Operator QR:"      value={formData.technicianId}  />
-      <FormField label="Operator Name:"    value={formData.technicianName}/>
+      <FormField label="Symptom:"    value={symptom}                />
+      <FormField label="Line Name:"  value={formData.sensorName}    />
+      <FormField label="Location:"   value={formData.location}      />
+      <FormField label="Operator:"   value={formData.technicianId}  />
+      <FormField label="Outcome:"    value={formData.outcome}       />
+      <FormField label="Reason:"     value={formData.reason}        />
+      <FormField label="Duration:"   value={formData.duration}      />
+      <FormField label="Resolved:"   value={formData.resolved}      />
     </div>
   );
 }
@@ -811,13 +833,16 @@ function DowntimeFormPanel({ formData, symptom }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 11: MAINTENANCE HISTORY PANEL
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Columns: Line Name / Location / Operator / Symptom / Reason / Duration / Resolved / Outcome
+// [BACKEND #8] GET /api/downtime/history
 
 const historyColumns = [
-  { accessorKey: "sensorName",     header: "Sensor"     },
-  { accessorKey: "floor",          header: "Floor"      },
-  { accessorKey: "technicianName", header: "Technician" },
-  { accessorKey: "reason1",        header: "Symptom"    },
-  { accessorKey: "reason2",        header: "Reason"     },
+  { accessorKey: "sensorName",     header: "Line Name" },
+  { accessorKey: "floor",          header: "Location"  },
+  { accessorKey: "technicianId",   header: "Operator"  },
+  { accessorKey: "reason1",        header: "Symptom"   },
+  { accessorKey: "reason2",        header: "Reason"    },
   {
     header: "Duration",
     cell: ({ row }) => formatTimer(Math.floor((row.original.resolvedAt.getTime() - row.original.startedAt.getTime()) / 1000)),
@@ -875,20 +900,25 @@ export default function DowntimePage() {
   const [uploadOpen,   setUploadOpen]   = useState(false);
   const [activeRecord, setActiveRecord] = useState(null);
 
-  const [formData, setFormData] = useState({ sensorId: "", sensorName: "", floor: "", location: "", technicianId: "", technicianName: "" });
+  // ── Downtime Form panel state ─────────────────────────────────────────────
+  // Fields: Symptom / Line Name / Location / Operator — set on Start Downtime
+  //         Outcome / Reason / Duration / Resolved    — snapshot set on Mark Done
+  const [formData, setFormData] = useState({ sensorName: "", location: "", technicianId: "", outcome: "", reason: "", duration: "", resolved: "" });
   const [symptom,  setSymptom]  = useState("");
 
   const { escalatedIds, dismissEscalation } = useEscalation(stopLineList);
 
+  // ── [BACKEND #4] Called after scan 1 (sensor) + scan 2 (operator) + confirm ──
   const handleQueued = ({ sensorInfo, techInfo, symptom: rawSymptom }) => {
     const symptomLabel = SYMPTOM_LABELS[rawSymptom] ?? rawSymptom;
-    const floorLabel = `P${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}`;
+    const floorLabel   = `P${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}`;
+
     setStopLineList(prev => [{
       id:             `dt-${Date.now()}`,
       sensorName:     sensorInfo.lineName,
       floor:          floorLabel,
       location:       sensorInfo.location,
-      technicianName: techInfo.technicianName,
+      technicianName: "",
       technicianId:   techInfo.technicianId,
       reason1:        symptomLabel,
       reason2:        "",
@@ -897,30 +927,47 @@ export default function DowntimePage() {
       outcome:        null,
       resolvedAt:     null,
     }, ...prev]);
+
+    // Update Downtime Form panel — Symptom / Line Name / Location / Operator (Outcome/Reason/Duration/Resolved stay empty)
     setFormData({
-      sensorId:       sensorInfo.chipId,
-      sensorName:     sensorInfo.lineName,
-      floor:          floorLabel,
-      location:       sensorInfo.location,
-      technicianId:   techInfo.technicianId,
-      technicianName: "",
+      sensorName:   sensorInfo.lineName,
+      location:     sensorInfo.location,
+      technicianId: techInfo.technicianId,
+      outcome:      "",
+      reason:       "",
+      duration:     "",
+      resolved:     "",
     });
     setSymptom(symptomLabel);
   };
 
+  // ── [BACKEND #6] Move record from stop-line list to pending-done queue ────
+  // Snapshots Duration + Resolved at the moment of marking done.
+  // Also fills Outcome + Reason in the Downtime Form panel.
   const handleDone = (id, outcome, reason) => {
     const resolved = stopLineList.find(r => r.id === id);
     if (!resolved) return;
-    const resolvedAt  = new Date();
-    const reasonLabel = DOWNTIME_REASONS.find(r => r.id === reason)?.label ?? reason;
+    const resolvedAt      = new Date();
+    const durationSeconds = Math.floor((resolvedAt.getTime() - resolved.startedAt.getTime()) / 1000);
+    const reasonLabel     = DOWNTIME_REASONS.find(r => r.id === reason)?.label ?? reason;
+    const outcomeLabel    = OUTCOME_CONFIG[outcome]?.label ?? outcome;
     setStopLineList(prev => prev.filter(r => r.id !== id));
     setPendingDone(prev => [{ ...resolved, status: "done", outcome, reason2: reasonLabel, resolvedAt }, ...prev]);
+    // Update Downtime Form panel — Outcome / Reason / Duration / Resolved (snapshot at mark-done moment)
+    setFormData(prev => ({
+      ...prev,
+      outcome:  outcomeLabel,
+      reason:   reasonLabel,
+      duration: formatTimer(durationSeconds),
+      resolved: formatDate(resolvedAt),
+    }));
   };
 
+  // ── [BACKEND #7] Commit pending-done records to maintenance history ────────
   const handleUpload = () => {
     setMaintenanceHistory(prev => [...pendingDone, ...prev]);
     setPendingDone([]);
-    setFormData({ sensorId: "", sensorName: "", floor: "", location: "", technicianId: "", technicianName: "" });
+    setFormData({ sensorName: "", location: "", technicianId: "", outcome: "", reason: "", duration: "", resolved: "" });
     setSymptom("");
   };
 
@@ -952,6 +999,7 @@ export default function DowntimePage() {
             escalatedIds={escalatedIds}
             onDismissEscalation={dismissEscalation}
           />
+          {/* Downtime Form: Symptom / Line Name / Location / Operator */}
           <DowntimeFormPanel formData={formData} symptom={symptom} />
         </div>
 
@@ -962,6 +1010,7 @@ export default function DowntimePage() {
       </div>
 
       {/* ── START DOWNTIME MODAL ── */}
+      {/* Flow: Scan 1 (sensor) → Scan 2 (operator) → Confirm (chips) → Queue */}
       <CustomModal open={startOpen} onOpenChange={open => { if (!open) setStartOpen(false); }} title="Start Downtime" description="Scan 1: Sensor QR  →  Scan 2: Operator QR  →  Confirm" size="sm">
         <StartDowntimeContent onQueued={handleQueued} onClose={() => setStartOpen(false)} />
       </CustomModal>

@@ -71,13 +71,35 @@ const DEFAULT_SENSOR_LIMITS = {
   "mh-brother-pkg": { tempUL: 28, tempLL: 20, humidUL: 70, humidLL: 40 },
 };
 
+// ─── activeLocation ────────────────────────────────────────────────────────
+// Sourced from the "Active Location?" column in the Excel / DB.
+// Area ID → Active Location?
+//   P1F1-01 Dipping          → Y
+//   P1F1-02 SMT              → Y
+//   P1F1-03 Server Room      → Y  (no Area listed, kept Y)
+//   P1F1-04 AOI              → Y
+//   P1F1-05 SMT MH           → Y
+//   P1F1-06 Dipping2         → Y
+//   P1F1-07 SMT MH Dess 2    → Y
+//   P1F1-09 SMT MH Dess 1    → Y
+//   P1F1-10 SMT Cold Storage → Y  (location P1F1C)
+//   P1F1-11 SMT MH Dess 3    → Y
+//   P1F1-12 SMT MH Dess 4    → Y
+//   P1F1-13 SMT MH Dess 5    → Y
+//   P1F1-14 SMT MH Receiving → Y
+//   P1F1-15 BGA Rework       → Y
+//   P1F1-16 CIS              → Y  (no Area — treat as active)
+//   P1F1-17 Coating          → Y
+// [BACKEND #5] → replace hardcoded values with API response
+// ──────────────────────────────────────────────────────────────────────────
+
 // Metadata (id, name, color, x, y, direction) → stays in frontend forever.
 // [BACKEND #2] temp / humid / hasData → GET /api/sensor-readings/p1f2/current
 const MAP_SENSORS = [
-  { id: "brother-assy-1", name: "Brother Assy 1",       color: "#ffb6c1", x: 73.1,  y: 53.5, direction: "bottom", temp: 23.50, humid: 51.30, hasData: true  },
-  { id: "brother-assy-2", name: "Brother Assy 2",       color: "#00bcd4", x: 57.7,  y: 48.6,                      temp: 23.40, humid: 55.70, hasData: true  },
-  { id: "jcm-pcba",       name: "JCM PCBA",             color: "#3d5afe", x: 38.75, y: 41.7,                      temp: 25.30, humid: 56.50, hasData: true  },
-  { id: "mh-brother-pkg", name: "MH Brother Packaging", color: "#198754", x: 95.35, y: 50.3, direction: "left",   temp: 24.20, humid: 48.70, hasData: true  },
+  { id: "brother-assy-1", name: "Brother Assy 1",       color: "#ffb6c1", x: 73.1,  y: 53.5, direction: "bottom", temp: 23.50, humid: 51.30, hasData: true, activeLocation: true  },
+  { id: "brother-assy-2", name: "Brother Assy 2",       color: "#00bcd4", x: 57.7,  y: 48.6,                      temp: 23.40, humid: 55.70, hasData: true, activeLocation: true  },
+  { id: "jcm-pcba",       name: "JCM PCBA",             color: "#3d5afe", x: 38.75, y: 41.7,                      temp: 25.30, humid: 56.50, hasData: true, activeLocation: true  },
+  { id: "mh-brother-pkg", name: "MH Brother Packaging", color: "#198754", x: 95.35, y: 50.3, direction: "left",   temp: 24.20, humid: 48.70, hasData: true, activeLocation: true  },
 ];
 
 // No dessicators on P1F2
@@ -97,20 +119,54 @@ function getSensorLimits(sensorId, allLimits) {
   return allLimits[sensorId] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 };
 }
 
+// ─── getPaneStatus ────────────────────────────────────────────────────────────
+// Returns one of four statuses:
+//   "ok"              — within limits (active or inactive area)
+//   "breach"          — exceeds limits AND area is active   → triggers red/alarm
+//   "inactive-breach" — exceeds limits BUT area is inactive → green + badge only
+//   "no-data"         — sensor has no reading
+// ─────────────────────────────────────────────────────────────────────────────
+
 function getPaneStatus(sensor, allLimits) {
   if (!sensor.hasData) return "no-data";
   const lim = getSensorLimits(sensor.id, allLimits);
   const tempBreach  = sensor.temp  > lim.tempUL  || sensor.temp  < lim.tempLL;
   const humidBreach = sensor.humid > lim.humidUL || sensor.humid < lim.humidLL;
-  if (tempBreach || humidBreach) return "breach";
-  return "ok";
+  const isBreaching = tempBreach || humidBreach;
+  if (!isBreaching) return "ok";
+  return sensor.activeLocation ? "breach" : "inactive-breach";
 }
 
 const STATUS_STYLES = {
-  "ok":      { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
-  "breach":  { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
-  "no-data": { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
+  "ok":              { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
+  "breach":          { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
+  "inactive-breach": { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
+  "no-data":         { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
 };
+
+// Small pill badge rendered inside the sensor pane when area is inactive + breaching
+function InactiveAreaBadge() {
+  return (
+    <span style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 3,
+      fontSize: 8,
+      fontWeight: 700,
+      letterSpacing: ".04em",
+      textTransform: "uppercase",
+      background: "#fff8e1",
+      color: "#b08000",
+      border: "1px solid #ffe082",
+      borderRadius: 5,
+      padding: "1px 5px",
+      verticalAlign: "middle",
+      whiteSpace: "nowrap",
+    }}>
+      Inactive Area
+    </span>
+  );
+}
 
 function getPaneDirection(sensor) {
   if (sensor.direction) return sensor.direction;
@@ -371,9 +427,14 @@ function SensorPane({ sensor, allLimits }) {
   const status = getPaneStatus(sensor, allLimits);
   const style  = STATUS_STYLES[status];
   const lim    = getSensorLimits(sensor.id, allLimits);
+  const isInactiveBreach = !sensor.activeLocation;
+
   return (
     <div style={{ background: style.bg, border: `2px solid ${style.border}`, borderRadius: 8, padding: "8px 12px", minWidth: 155, color: style.text, boxShadow: "0 4px 12px rgba(0,0,0,.18)", pointerEvents: "none", whiteSpace: "nowrap" }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{sensor.name}</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+        {sensor.name}
+        {isInactiveBreach && <InactiveAreaBadge />}
+      </div>
       {sensor.hasData ? (
         <>
           <div style={{ fontSize: 12 }}>
@@ -427,7 +488,8 @@ function SensorMarker({ sensor, selected, onToggle, allLimits }) {
 }
 
 function SensorListItem({ sensor, selected, onToggle, allLimits }) {
-  const statusDot = STATUS_STYLES[getPaneStatus(sensor, allLimits)].dot;
+  const status    = getPaneStatus(sensor, allLimits);
+  const statusDot = STATUS_STYLES[status].dot;
   return (
     <div
       onClick={() => onToggle(sensor.id)}
@@ -441,7 +503,8 @@ function SensorListItem({ sensor, selected, onToggle, allLimits }) {
       </div>
       <div style={{ width: 14, height: 14, flexShrink: 0, background: sensor.color, border: `1.5px solid ${sensor.color === "#ffffff" ? "#adb5bd" : "rgba(0,0,0,.2)"}`, borderRadius: 2 }} />
       <span style={{ fontSize: 13 }}>{sensor.name}</span>
-      <div style={{ marginLeft: "auto", flexShrink: 0 }}>
+      <div style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
+        {!sensor.activeLocation && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#b08000", display: "block" }} title="Inactive area — alarms suppressed" />}
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusDot, display: "block" }} />
       </div>
     </div>
@@ -509,12 +572,16 @@ export default function P1F2MapPage() {
 
         <div style={{ padding: "10px 16px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
           {[
-            { color: STATUS_STYLES["ok"].dot,      label: "Within limits"  },
-            { color: STATUS_STYLES["breach"].dot,   label: "Limit breached" },
-            { color: STATUS_STYLES["no-data"].dot,  label: "No data"        },
-          ].map(({ color, label }) => (
+            { color: STATUS_STYLES["ok"].dot,      label: "Within limits"              },
+            { color: STATUS_STYLES["breach"].dot,   label: "Limit breached"             },
+            { color: STATUS_STYLES["no-data"].dot,  label: "No data"                    },
+            { color: null,                          label: "Inactive area", isText: true },
+          ].map(({ color, label, isText }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              {isText
+                ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#b08000", display: "block", flexShrink: 0 }} />
+                : <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              }
               {label}
             </div>
           ))}
