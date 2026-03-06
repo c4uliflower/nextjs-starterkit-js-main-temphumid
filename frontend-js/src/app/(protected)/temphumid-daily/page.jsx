@@ -444,7 +444,7 @@ export default function Dashboard() {
 
       {/* Page header */}
       <div>
-        <h1 className="text-2xl font-bold">Daily</h1>
+        <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="mt-1 text-muted-foreground">Temperature and Humidity Monitoring System</p>
       </div>
 

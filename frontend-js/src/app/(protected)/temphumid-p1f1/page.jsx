@@ -28,6 +28,11 @@ import { CustomModal } from "@/components/custom/CustomModal";
 // │
 // │  #4  handleSaveLimits() — POST /api/limits/p1f1/per-sensor
 // │
+// │  #5  activeLocation flag
+// │      → GET /api/locations/p1f1/active-status
+// │      → Returns: { [sensorId]: boolean }
+// │      → Currently hardcoded from Excel "Active Location?" column
+// │
 // └────────────────────────────────────────────────────────────────────────────
 
 
@@ -56,28 +61,50 @@ const DEFAULT_SENSOR_LIMITS = {
   "dess-6":      { tempUL: 28, tempLL: 20, humidUL: 50, humidLL:  0 },
 };
 
+// ─── activeLocation ────────────────────────────────────────────────────────
+// Sourced from the "Active Location?" column in the Excel / DB.
+// Area ID → Active Location?
+//   P1F1-01 Dipping          → Y
+//   P1F1-02 SMT              → Y
+//   P1F1-03 Server Room      → Y  (no Area listed, kept Y)
+//   P1F1-04 AOI              → Y
+//   P1F1-05 SMT MH           → Y
+//   P1F1-06 Dipping2         → Y
+//   P1F1-07 SMT MH Dess 2    → Y
+//   P1F1-09 SMT MH Dess 1    → Y
+//   P1F1-10 SMT Cold Storage → Y  (location P1F1C)
+//   P1F1-11 SMT MH Dess 3    → Y
+//   P1F1-12 SMT MH Dess 4    → Y
+//   P1F1-13 SMT MH Dess 5    → Y
+//   P1F1-14 SMT MH Receiving → Y
+//   P1F1-15 BGA Rework       → Y
+//   P1F1-16 CIS              → Y  (no Area — treat as active)
+//   P1F1-17 Coating          → Y
+// [BACKEND #5] → replace hardcoded values with API response
+// ──────────────────────────────────────────────────────────────────────────
+
 const MAP_SENSORS = [
-  { id: "aoi",         name: "AOI",                color: "#f5c518", x: 78.9,  y: 52.8, direction: "bottom", temp: 24.50, humid: 62.10, hasData: true  },
-  { id: "dipping2",    name: "Dipping2",           color: "#1e90ff", x: 53,    y: 48.5,                      temp: 22.40, humid: 60.80, hasData: true  },
-  { id: "dipping",     name: "Dipping",            color: "#dc3545", x: 61.6,  y: 48.5, direction: "bottom", temp: null,  humid: null,  hasData: false },
-  { id: "server-room", name: "Server Room",        color: "#00c9a7", x: 26.7,  y: 90.2, direction: "top",    temp: 17.70, humid: 54.60, hasData: true  },
-  { id: "smt",         name: "SMT",                color: "#fd7e14", x: 80.6,  y: 12.7,                      temp: 25.10, humid: 49.90, hasData: true  },
-  { id: "smt-cs",      name: "SMT - Cold Storage", color: "#198754", x: 96.3,  y: 50.8, direction: "left",   temp:  2.25, humid:  0.00, hasData: true  },
-  { id: "smt-mh",      name: "SMT MH",             color: "#feaec9", x: 11,    y: 90.1,                      temp: null,  humid: null,  hasData: false },
-  { id: "smt-mh-rcv",  name: "SMT MH Receiving",   color: "#6f92be", x: 17.62, y: 51.9, direction: "top",    temp: 23.20, humid: 72.20, hasData: true  },
-  { id: "bga-r",       name: "BGA Rework",         color: "#ff00ff", x: 34,    y: 52.3, direction: "bottom", temp: 21.40, humid: 71.30, hasData: true  },
-  { id: "coating",     name: "Coating Area",       color: "#ffffff", x: 60.5,  y: 80,                        temp: 21.40, humid: 71.30, hasData: true  },
+  { id: "aoi",         name: "AOI",                color: "#f5c518", x: 78.9,  y: 52.8, direction: "bottom", temp: 24.50, humid: 62.10, hasData: true,  activeLocation: true  },
+  { id: "dipping2",    name: "Dipping2",           color: "#1e90ff", x: 53,    y: 48.5,                      temp: 22.40, humid: 60.80, hasData: true,  activeLocation: true  },
+  { id: "dipping",     name: "Dipping",            color: "#dc3545", x: 61.6,  y: 48.5, direction: "bottom", temp: null,  humid: null,  hasData: false, activeLocation: true  },
+  { id: "server-room", name: "Server Room",        color: "#00c9a7", x: 26.7,  y: 90.2, direction: "top",    temp: 17.70, humid: 54.60, hasData: true,  activeLocation: true  },
+  { id: "smt",         name: "SMT",                color: "#fd7e14", x: 80.6,  y: 12.7,                      temp: 25.10, humid: 49.90, hasData: true,  activeLocation: true  },
+  { id: "smt-cs",      name: "SMT - Cold Storage", color: "#198754", x: 96.3,  y: 50.8, direction: "left",   temp:  2.25, humid:  0.00, hasData: true,  activeLocation: true  },
+  { id: "smt-mh",      name: "SMT MH",             color: "#feaec9", x: 11,    y: 90.1,                      temp: null,  humid: null,  hasData: false, activeLocation: true  },
+  { id: "smt-mh-rcv",  name: "SMT MH Receiving",   color: "#6f92be", x: 17.62, y: 51.9, direction: "top",    temp: 23.20, humid: 72.20, hasData: true,  activeLocation: true  },
+  { id: "bga-r",       name: "BGA Rework",         color: "#ff00ff", x: 34,    y: 52.3, direction: "bottom", temp: 21.40, humid: 71.30, hasData: true,  activeLocation: true  },
+  { id: "coating",     name: "Coating Area",       color: "#ffffff", x: 60.5,  y: 80,                        temp: 21.40, humid: 71.30, hasData: true,  activeLocation: true  }, // example inactive
 ];
 
 const DESSICATOR_ZONE = { x: 11.5, y: 82 };
 
 const DESSICATOR_SENSORS = [
-  { id: "dess-1", name: "SMT MH Dessicator 1", temp: 21.90, humid: 44.40, hasData: true  },
-  { id: "dess-2", name: "SMT MH Dessicator 2", temp: 22.20, humid: 52.30, hasData: true  },
-  { id: "dess-3", name: "SMT MH Dessicator 3", temp: 22.20, humid: 55.70, hasData: true  },
-  { id: "dess-4", name: "SMT MH Dessicator 4", temp: 21.30, humid: 47.80, hasData: true  },
-  { id: "dess-5", name: "SMT MH Dessicator 5", temp: 21.30, humid: 37.50, hasData: true  },
-  { id: "dess-6", name: "SMT MH Dessicator 6", temp: null,  humid: null,  hasData: false },
+  { id: "dess-1", name: "SMT MH Dessicator 1", temp: 21.90, humid: 44.40, hasData: true,  activeLocation: true  },
+  { id: "dess-2", name: "SMT MH Dessicator 2", temp: 22.20, humid: 52.30, hasData: true,  activeLocation: true  },
+  { id: "dess-3", name: "SMT MH Dessicator 3", temp: 22.20, humid: 55.70, hasData: true,  activeLocation: true  },
+  { id: "dess-4", name: "SMT MH Dessicator 4", temp: 21.30, humid: 47.80, hasData: true,  activeLocation: true  },
+  { id: "dess-5", name: "SMT MH Dessicator 5", temp: 21.30, humid: 37.50, hasData: true,  activeLocation: true  },
+  { id: "dess-6", name: "SMT MH Dessicator 6", temp: null,  humid: null,  hasData: false, activeLocation: true  },
 ];
 
 const ALL_EDITABLE_SENSORS = [
@@ -94,19 +121,57 @@ function getSensorLimits(sensorId, allLimits) {
   return allLimits[sensorId] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 };
 }
 
+// ─── getPaneStatus ────────────────────────────────────────────────────────────
+// Returns one of four statuses:
+//   "ok"              — within limits (active or inactive area)
+//   "breach"          — exceeds limits AND area is active   → triggers red/alarm
+//   "inactive-breach" — exceeds limits BUT area is inactive → green + badge only
+//   "no-data"         — sensor has no reading
+// ─────────────────────────────────────────────────────────────────────────────
 function getPaneStatus(sensor, allLimits) {
   if (!sensor.hasData) return "no-data";
   const lim = getSensorLimits(sensor.id, allLimits);
   const tempBreach  = sensor.temp  > lim.tempUL  || sensor.temp  < lim.tempLL;
   const humidBreach = sensor.humid > lim.humidUL || sensor.humid < lim.humidLL;
-  return (tempBreach || humidBreach) ? "breach" : "ok";
+  const isBreaching = tempBreach || humidBreach;
+
+  if (!isBreaching) return "ok";
+  return sensor.activeLocation ? "breach" : "inactive-breach";
 }
 
 const STATUS_STYLES = {
-  "ok":      { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
-  "breach":  { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
-  "no-data": { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
+  "ok":              { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
+  "breach":          { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
+  // inactive-breach: visually green (no alarm) but has a subtle amber border to
+  // distinguish it from a truly healthy reading in the pane/card detail view.
+  // The dot in the sidebar/legend remains green so it never looks like an alarm.
+  "inactive-breach": { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
+  "no-data":         { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
 };
+
+// Small pill badge rendered inside the sensor pane when area is inactive + breaching
+function InactiveAreaBadge() {
+  return (
+    <span style={{
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 3,
+      fontSize: 8,
+      fontWeight: 700,
+      letterSpacing: ".04em",
+      textTransform: "uppercase",
+      background: "#fff8e1",
+      color: "#b08000",
+      border: "1px solid #ffe082",
+      borderRadius: 5,
+      padding: "1px 5px",
+      verticalAlign: "middle",
+      whiteSpace: "nowrap",
+    }}>
+      Inactive Area
+    </span>
+  );
+}
 
 function getPaneDirection(sensor) {
   if (sensor.direction) return sensor.direction;
@@ -119,6 +184,7 @@ function getPaneDirection(sensor) {
 
 function getDessicatorZoneStatus(allLimits) {
   if (DESSICATOR_SENSORS.every(s => !s.hasData)) return "no-data";
+  // Only "breach" (active area breach) should make the zone indicator red
   if (DESSICATOR_SENSORS.some(s => getPaneStatus(s, allLimits) === "breach")) return "breach";
   return "ok";
 }
@@ -126,20 +192,6 @@ function getDessicatorZoneStatus(allLimits) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 3: SENSOR LIMITS MODAL CONTENT
-//
-// Used inside <CustomModal fixedLayout height="80vh"> which renders ONLY the
-// Dialog shell (backdrop, rounded box, close button × — no header, no padding).
-// This component fully owns:
-//   • Pinned header  (title + subtitle row)
-//   • Scrollable two-panel body (left sensor list, right edit panel)
-//   • Pinned footer  (Cancel + Save All)
-//
-// The layout works because the outer DialogContent is:
-//   display:flex; flex-direction:column; height:80vh; overflow:hidden; padding:0
-// and this component's three direct children are:
-//   header  → flexShrink:0 (never shrinks)
-//   body    → flex:1; minHeight:0; overflow:hidden inside; panels scroll
-//   footer  → flexShrink:0 (never shrinks)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
@@ -174,19 +226,11 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     return { errors: e, parsed };
   };
 
-  // [BACKEND #4] → POST /api/limits/p1f1/per-sensor
   const handleSaveLimits = async () => {
     const { errors: e, parsed } = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
     setSaving(true); setApiError(null);
     try {
-      // ── [BACKEND] uncomment when ready ───────────────────────────────────
-      // const res  = await fetch("/api/limits/p1f1/per-sensor", {
-      //   method: "POST", headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({ limits: parsed }),
-      // });
-      // const json = await res.json();
-      // if (!res.ok || !json.ok) throw new Error(json.message ?? "Save failed");
       await new Promise(r => setTimeout(r, 600));
       onSave(parsed);
       onClose();
@@ -229,22 +273,13 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
   const groups = [...new Set(sensors.map(s => s.group))];
 
   return (
-    // Outer wrapper fills the full DialogContent box (flex column, height:80vh)
-    // Three children: header (shrink:0), body (flex:1 min-h:0), footer (shrink:0)
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-
-      {/* ── PINNED HEADER ── */}
       <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid #e9ecef", flexShrink: 0 }}>
         <p className="text-base font-semibold">Adjust Sensor Limits</p>
         <p className="text-sm text-muted-foreground mt-0.5">Plant 1 Floor 1 · Each sensor has its own threshold</p>
       </div>
 
-      {/* ── SCROLLABLE TWO-PANEL BODY ── */}
-      {/* minHeight:0 is the critical rule — without it flex children won't shrink
-          below their content size, so the footer gets pushed out of the box     */}
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-
-        {/* Left — sensor list, scrolls independently */}
         <div style={{ width: 180, flexShrink: 0, borderRight: "1px solid #e9ecef", overflowY: "auto", padding: "8px 0" }}>
           {groups.map(group => {
             const list = sensors.filter(s => s.group === group);
@@ -275,10 +310,8 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
           })}
         </div>
 
-        {/* Right — edit panel, scrolls independently */}
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24, background: "#fff" }}>
           <p className="text-base font-semibold">{activeSensor?.name}</p>
-
           <div>
             <p className="text-sm font-medium mb-3">Temperature</p>
             <div style={{ display: "flex", gap: 16 }}>
@@ -286,7 +319,6 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
               <NumField sensorId={activeId} fieldKey="tempUL" label="Upper Limit" unit="°C" />
             </div>
           </div>
-
           <div>
             <p className="text-sm font-medium mb-3">Humidity</p>
             <div style={{ display: "flex", gap: 16 }}>
@@ -294,20 +326,12 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
               <NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" />
             </div>
           </div>
-
-          {/* Quick apply — copies active sensor limits to all in the same group */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
             {groups.map(group => {
               const list = sensors.filter(s => s.group === group);
               if (!list.find(s => s.id === activeId)) return null;
               return (
-                <Button
-                  key={group}
-                  type="button"
-                  size="default"
-                  variant="default"
-                  className="cursor-pointer"
-                  disabled={saving}
+                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving}
                   onClick={() => {
                     const src = draft[activeId];
                     setDraft(prev => {
@@ -322,7 +346,6 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
               );
             })}
           </div>
-
           {apiError && (
             <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">
               {apiError}
@@ -331,7 +354,6 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
         </div>
       </div>
 
-      {/* ── PINNED FOOTER ── */}
       <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
         {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
         <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
@@ -339,7 +361,6 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
           {saving ? "Saving…" : "Save All"}
         </Button>
       </div>
-
     </div>
   );
 }
@@ -353,9 +374,14 @@ function SensorPane({ sensor, allLimits }) {
   const status = getPaneStatus(sensor, allLimits);
   const style  = STATUS_STYLES[status];
   const lim    = getSensorLimits(sensor.id, allLimits);
+  const isInactiveBreach = status === "inactive-breach";
+
   return (
     <div style={{ background: style.bg, border: `2px solid ${style.border}`, borderRadius: 8, padding: "8px 12px", minWidth: 155, color: style.text, boxShadow: "0 4px 12px rgba(0,0,0,.18)", pointerEvents: "none", whiteSpace: "nowrap" }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{sensor.name}</div>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+        {sensor.name}
+        {isInactiveBreach && <InactiveAreaBadge />}
+      </div>
       {sensor.hasData ? (
         <>
           <div style={{ fontSize: 12 }}>
@@ -411,6 +437,7 @@ function SensorMarker({ sensor, selected, onToggle, allLimits }) {
 function DessicatorZoneMarker({ open, onToggle, allLimits }) {
   const zoneStatus  = getDessicatorZoneStatus(allLimits);
   const breachCount = DESSICATOR_SENSORS.filter(s => getPaneStatus(s, allLimits) === "breach").length;
+  // inactive-breaches do NOT count toward the red badge — only active breaches do
   const dotColor    = STATUS_STYLES[zoneStatus].border;
 
   return (
@@ -431,10 +458,14 @@ function DessicatorZoneMarker({ open, onToggle, allLimits }) {
             const st  = getPaneStatus(s, allLimits);
             const ss  = STATUS_STYLES[st];
             const lim = getSensorLimits(s.id, allLimits);
+            const isInactiveBreach = st === "inactive-breach";
             return (
               <div key={s.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "5px 8px", borderRadius: 6, marginBottom: 4, background: ss.bg, border: `1px solid ${ss.border}` }}>
                 <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: ss.text }}>{s.name}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: ss.text, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                    {s.name}
+                    {isInactiveBreach && <InactiveAreaBadge />}
+                  </div>
                   {s.hasData
                     ? <div style={{ fontSize: 10, color: "#6c757d" }}>{s.temp?.toFixed(1)}°C · {s.humid?.toFixed(1)}% <span style={{ opacity: 0.6 }}>(H≤{lim.humidUL}%)</span></div>
                     : <div style={{ fontSize: 10, color: "#adb5bd" }}>No data</div>
@@ -451,7 +482,8 @@ function DessicatorZoneMarker({ open, onToggle, allLimits }) {
 }
 
 function SensorListItem({ sensor, selected, onToggle, allLimits }) {
-  const statusDot = STATUS_STYLES[getPaneStatus(sensor, allLimits)].dot;
+  const status    = getPaneStatus(sensor, allLimits);
+  const statusDot = STATUS_STYLES[status].dot;
   return (
     <div
       onClick={() => onToggle(sensor.id)}
@@ -465,7 +497,9 @@ function SensorListItem({ sensor, selected, onToggle, allLimits }) {
       </div>
       <div style={{ width: 14, height: 14, flexShrink: 0, background: sensor.color, border: `1.5px solid ${sensor.color === "#ffffff" ? "#adb5bd" : "rgba(0,0,0,.2)"}`, borderRadius: 2 }} />
       <span style={{ fontSize: 13 }}>{sensor.name}</span>
-      <div style={{ marginLeft: "auto", flexShrink: 0 }}>
+      <div style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
+        {/* Show a small ⏸ pause icon in the list if area is inactive, regardless of breach state */}
+        {!sensor.activeLocation && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#b08000", display: "block" }} title="Inactive area — alarms suppressed" />}
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusDot, display: "block" }} />
       </div>
     </div>
@@ -475,9 +509,13 @@ function SensorListItem({ sensor, selected, onToggle, allLimits }) {
 function DessicatorCard({ sensor, allLimits }) {
   const status = getPaneStatus(sensor, allLimits);
   const style  = STATUS_STYLES[status];
+  const isInactiveBreach = status === "inactive-breach";
   return (
     <div style={{ background: style.bg, border: `2px solid ${style.border}`, borderRadius: 8, padding: "8px 12px", color: style.text, minWidth: 170, flex: "0 0 auto", boxShadow: "0 4px 12px rgba(0,0,0,.1)" }}>
-      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4 }}>{sensor.name}</div>
+      <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+        {sensor.name}
+        {isInactiveBreach && <InactiveAreaBadge />}
+      </div>
       {sensor.hasData ? (
         <>
           <div style={{ fontSize: 12 }}>Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong></div>
@@ -531,14 +569,20 @@ export default function P1F1MapPage() {
           ))}
         </div>
 
+        {/* ── LEGEND ── */}
         <div style={{ padding: "10px 16px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
           {[
-            { color: STATUS_STYLES["ok"].dot,     label: "Within limits"  },
-            { color: STATUS_STYLES["breach"].dot,  label: "Limit breached" },
-            { color: STATUS_STYLES["no-data"].dot, label: "No data"        },
-          ].map(({ color, label }) => (
+            { color: STATUS_STYLES["ok"].dot,      label: "Within limits"              },
+            { color: STATUS_STYLES["breach"].dot,   label: "Limit breached"             },
+            { color: STATUS_STYLES["no-data"].dot,  label: "No data"                    },
+            // inactive-breach uses same green dot — explained by the ⏸ text instead
+            { color: null,                          label: "Inactive area", isText: true },
+          ].map(({ color, label, isText }) => (
             <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              {isText
+                ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#b08000", display: "block", flexShrink: 0 }} />
+                : <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />
+              }
               {label}
             </div>
           ))}
@@ -575,14 +619,7 @@ export default function P1F1MapPage() {
         </div>
       </div>
 
-      {/* ── SENSOR LIMITS MODAL ──
-          fixedLayout={true} tells CustomModal to render ONLY the Dialog shell
-          (backdrop, rounded box, close ×). No header, no padding, no footer
-          are added by CustomModal. SensorLimitsContent owns all of that.
-
-          height="80vh" sets the DialogContent to a fixed 80% of viewport height.
-          size="xl" gives sm:max-w-4xl width.
-      ── */}
+      {/* ── SENSOR LIMITS MODAL ── */}
       <CustomModal
         open={limitsOpen}
         onOpenChange={open => { if (!open) setLimitsOpen(false); }}
