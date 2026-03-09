@@ -482,7 +482,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
     setStep(3);
   };
 
-  const floorLabel   = sensorInfo ? `P${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}` : "";
+  const floorLabel   = sensorInfo ? `${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}` : "";
   const symptomLabel = sensorInfo ? (SYMPTOM_LABELS[sensorInfo.status] ?? sensorInfo.status) : "";
 
   return (
