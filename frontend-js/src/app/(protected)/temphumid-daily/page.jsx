@@ -337,6 +337,14 @@ function SensorLineChart({ id, title, subtitle, datasets, labels, yLabel, limitP
 // SECTION 6: MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Helper: returns a { from, to } range covering the past 24 hours up to now
+function getDefault24hRange() {
+  const to   = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - 1);
+  return { from, to };
+}
+
 export default function Dashboard() {
   const chartReady = useChartJS();
 
@@ -344,10 +352,9 @@ export default function Dashboard() {
   const [selLocationValues, setSelLocationValues] = useState([]);
   const [selSensorValues,   setSelSensorValues]   = useState([]);
 
-  const today = new Date();
-  const sevenDaysAgo = new Date();
-  sevenDaysAgo.setDate(today.getDate() - 6);
-  const [range, setRange] = useState({ from: sevenDaysAgo, to: today });
+  // Default date range = past 24 h so Apply is immediately clickable once
+  // a sensor or location is chosen, without the user having to open the picker.
+  const [range, setRange] = useState(getDefault24hRange());
 
   // ── Chart data state ────────────────────────────────────────────────────────
   const [labels,   setLabels]   = useState([]);
@@ -393,6 +400,13 @@ export default function Dashboard() {
     setApplied(false);
   };
 
+  // Reset range back to "past 24 h" when the user clears the picker entirely,
+  // so Apply never becomes permanently disabled.
+  const handleRangeChange = (newRange) => {
+    setRange(newRange ?? getDefault24hRange());
+    setApplied(false);
+  };
+
   const sensorsToFetch = selSensors.length > 0
     ? selSensors
     : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? []);
@@ -422,7 +436,7 @@ export default function Dashboard() {
 
   const handleClear = () => {
     setSelLocationValues([]); setSelSensorValues([]);
-    setRange(undefined);
+    setRange(getDefault24hRange()); // reset to default 24 h instead of undefined
     setTempDS([]); setHumidDS([]); setApplied(false);
   };
 
@@ -474,7 +488,7 @@ export default function Dashboard() {
         </CardHeader>
         <CardContent>
 
-          {/* Filter row — Limits toggle removed */}
+          {/* Filter row */}
           <div className="flex flex-wrap items-end gap-3 pb-4 border-b">
 
             {/* Location */}
@@ -508,7 +522,7 @@ export default function Dashboard() {
             {/* Date Picker */}
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date Range</label>
-              <DateRangePicker value={range} onChange={setRange} />
+              <DateRangePicker value={range} onChange={handleRangeChange} />
             </div>
 
           </div>
@@ -539,7 +553,7 @@ export default function Dashboard() {
                 <span className="text-4xl mb-3"><FileText /></span>
                 <p className="font-semibold text-foreground mb-1">No data to display</p>
                 <p className="text-sm text-muted-foreground">
-                  Select location, sensor and date range then click <strong>Apply</strong>.
+                  Select location or sensor then click <strong>Apply</strong>.
                 </p>
               </div>
             ) : (
