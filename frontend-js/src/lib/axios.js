@@ -9,13 +9,15 @@ const axios = Axios.create({
   baseURL: process.env.NEXT_PUBLIC_BACKEND_API,
 });
 
-if (typeof window !== "undefined") {
-  const token = localStorage.getItem(TOKEN_KEY);
-
-  if (token) {
-    axios.defaults.headers.common["Authorization"] = `Bearer ${token}`;
+axios.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (token) {
+      config.headers["Authorization"] = `Bearer ${token}`;
+    }
   }
-}
+  return config;
+});
 
 axios.interceptors.response.use(
   (response) => response,
