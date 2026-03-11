@@ -57,7 +57,7 @@ const MAP_SENSORS = [
   { id: "jcm-assy",         areaId: "P2F2-01", name: "JCM Assy",             color: "#3d5afe", x: 63.2,  y: 17.6,                      },
   { id: "wh-brother-pkg",   areaId: "P2F2-02", name: "WH Brother Packaging", color: "#1e90ff", x: 52.8,  y: 9.2,   direction: "left",  },
   { id: "wh-mh-jcm-assy",   areaId: "P2F2-03", name: "WH-MH JCM Assy",       color: "#dc3545", x: 39.8,  y: 32.32, direction: "top",   },
-  { id: "cis",              areaId: "P1F1-16",  name: "CIS",                 color: "#ffffff", x: 39,    y: 44.45, direction: "left",  },
+  { id: "cis",              areaId: "P1F1-16", name: "CIS",                  color: "#ffffff", x: 39,    y: 44.45, direction: "left",  },
 ];
 
 const ALL_EDITABLE_SENSORS = [

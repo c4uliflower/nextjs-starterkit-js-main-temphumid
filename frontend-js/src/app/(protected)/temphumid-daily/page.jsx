@@ -18,9 +18,13 @@ import axios from "@/lib/axios";
 
 const API_BASE = '/api/temphumid';
 
+/**
+ * SENSOR_MAP — keyed by location label, values use real areaIds from DB.
+ * These areaIds are passed directly to the backend for lookup in Temp_Logger_Chip_ID.
+ */
 const SENSOR_MAP = {
   "Cold Storage": [
-    { id: "P1F1-10", name: "SMT - Cold Storage"      },
+    { id: "P1F1-10", name: "SMT - Cold Storage"       },
     { id: "P2F1-16", name: "WH - Cold Storage"        },
     { id: "P2F1-17", name: "WH - Cold Storage 2"      },
   ],
@@ -57,7 +61,7 @@ const SENSOR_MAP = {
   ],
   "P2F2": [
     { id: "P2F2-04", name: "Calibration Room"         },
-    { id: "P1F1-18", name: "CIS"                      },
+    { id: "P1F1-18", name: "CIS"                      }, // temporary — update when DB corrected (ALREADY CORRECTED)
     { id: "P2F2-01", name: "JCM Assy"                 },
     { id: "P2F2-02", name: "WH Brother Packaging"     },
     { id: "P2F2-03", name: "WH-MH JCM Assy"           },
@@ -77,23 +81,17 @@ const SENSOR_MAP = {
   ],
 };
 
+// Flat list of all locations
 const ALL_LOCATIONS = Object.keys(SENSOR_MAP);
-const ALL_SENSORS   = Object.values(SENSOR_MAP).flat();
 
+// Flat list of all sensors across all locations
+const ALL_SENSORS = Object.values(SENSOR_MAP).flat();
+
+// Lookup: sensorId (areaId) → location name
 const SENSOR_LOCATION_MAP = {};
 Object.entries(SENSOR_MAP).forEach(([loc, sensors]) => {
   sensors.forEach((s) => { SENSOR_LOCATION_MAP[s.id] = loc; });
 });
-
-const LOCATION_LIMITS = {
-  "Cold Storage": { tempUL: 18, tempLL: -2,  humidUL: 70, humidLL: 30 },
-  "P1F1":         { tempUL: 28, tempLL: 13,  humidUL: 80, humidLL: 40 },
-  "P1F2":         { tempUL: 28, tempLL: 13,  humidUL: 80, humidLL: 40 },
-  "P2F1":         { tempUL: 30, tempLL: 15,  humidUL: 85, humidLL: 35 },
-  "P2F2":         { tempUL: 30, tempLL: 15,  humidUL: 85, humidLL: 35 },
-  "P1&2F2":       { tempUL: 28, tempLL: 13,  humidUL: 80, humidLL: 40 },
-  "WH":           { tempUL: 30, tempLL: 15,  humidUL: 85, humidLL: 35 },
-};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -117,8 +115,8 @@ function getDefault24hRange() {
 }
 
 const toISODate = (d) => {
-  const y   = d.getFullYear();
-  const m   = String(d.getMonth() + 1).padStart(2, "0");
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
@@ -315,14 +313,15 @@ export default function Dashboard() {
   const [range,             setRange]             = useState(getDefault24hRange());
 
   // ── Chart state ─────────────────────────────────────────────────────────────
-  const [labels,   setLabels]   = useState([]);
-  const [tempDS,   setTempDS]   = useState([]);
-  const [humidDS,  setHumidDS]  = useState([]);
-  const [chartKey, setChartKey] = useState(0);
-  const [applied,  setApplied]  = useState(false);
-  const [loading,  setLoading]  = useState(false);
-  const [apiError, setApiError] = useState(null);
-  const [noData,   setNoData]   = useState(false);
+  const [labels,        setLabels]        = useState([]);
+  const [tempDS,        setTempDS]        = useState([]);
+  const [humidDS,       setHumidDS]       = useState([]);
+  const [limitProfiles, setLimitProfiles] = useState([]);
+  const [chartKey,      setChartKey]      = useState(0);
+  const [applied,       setApplied]       = useState(false);
+  const [loading,       setLoading]       = useState(false);
+  const [apiError,      setApiError]      = useState(null);
+  const [noData,        setNoData]        = useState(false);
 
   // ── Derived selections ──────────────────────────────────────────────────────
   const selSensors   = ALL_SENSORS.filter((s) => selSensorValues.includes(s.id));
@@ -343,11 +342,6 @@ export default function Dashboard() {
     : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? []);
 
   const canApply = sensorsToFetch.length > 0 && range?.from && range?.to;
-
-  const graphedLocations    = [...new Set(sensorsToFetch.map(s => SENSOR_LOCATION_MAP[s.id]))];
-  const activeLimitProfiles = graphedLocations
-    .map(loc => ({ location: loc, ...(LOCATION_LIMITS[loc] ?? {}) }))
-    .filter(Boolean);
 
   // ── Filter handlers ─────────────────────────────────────────────────────────
   const handleLocationChange = (newLocValues) => {
@@ -382,7 +376,7 @@ export default function Dashboard() {
     setNoData(false);
   };
 
-  // ── Apply — fetch batch history ─────────────────────────────────────────────
+  // ── Apply — fetch batch history from backend ────────────────────────────────
   const handleApply = async () => {
     if (!canApply) return;
     setLoading(true);
@@ -407,14 +401,16 @@ export default function Dashboard() {
         },
       });
 
-      const batchData = res.data.data;
+      const batchData = res.data.data; // { [areaId]: { lineName, limits, readings: [...] } }
 
+      // Build a flat time label set across all sensors (union of all Day_Time values)
       const allTimes = new Set();
       Object.values(batchData).forEach(({ readings }) => {
         readings.forEach(r => allTimes.add(r.dayTime));
       });
       const sortedTimes = [...allTimes].sort();
 
+      // If no readings at all across all selected sensors, show no-data state
       if (sortedTimes.length === 0) {
         setNoData(true);
         setApplied(true);
@@ -422,6 +418,7 @@ export default function Dashboard() {
         return;
       }
 
+      // Format labels for display
       const newLabels = sortedTimes.map(t =>
         new Date(t).toLocaleString("en-PH", {
           month: "2-digit", day: "2-digit",
@@ -429,6 +426,7 @@ export default function Dashboard() {
         })
       );
 
+      // Build per-sensor time → value lookup for aligned datasets
       const newTempDS  = [];
       const newHumidDS = [];
 
@@ -436,6 +434,7 @@ export default function Dashboard() {
         const entry = batchData[sensor.id];
         if (!entry) return;
 
+        // Build lookup: dayTime → reading
         const readingMap = {};
         entry.readings.forEach(r => { readingMap[r.dayTime] = r; });
 
@@ -444,21 +443,43 @@ export default function Dashboard() {
 
         const color = CHART_COLORS[i % CHART_COLORS.length];
         const base  = {
-          label:           entry.lineName || sensor.name,
-          borderColor:     color,
-          backgroundColor: color + "22",
+          label: entry.lineName || sensor.name,
+          borderColor: color, backgroundColor: color + "22",
           borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false,
-          spanGaps: true,
+          spanGaps: true, // connect across null gaps
         };
 
         newTempDS.push({ ...base, data: tempData });
         newHumidDS.push({ ...base, data: humidData });
       });
 
+      // Derive limit profiles from actual DB values in the batch response.
+      // Group by location — use max UL and min LL across all sensors per location
+      // so the reference lines reflect real DB limits, not hardcoded values.
+      // This means when sensor limits are changed via the map page modal,
+      // the chart reference lines will reflect the updated values on next Apply.
+      const locationLimitMap = {};
+      sensorsToFetch.forEach((sensor) => {
+        const entry = batchData[sensor.id];
+        if (!entry?.limits) return;
+        const loc = SENSOR_LOCATION_MAP[sensor.id];
+        if (!locationLimitMap[loc]) {
+          locationLimitMap[loc] = { ...entry.limits, location: loc };
+        } else {
+          // Take the widest range — max UL, min LL
+          locationLimitMap[loc].tempUL  = Math.max(locationLimitMap[loc].tempUL,  entry.limits.tempUL);
+          locationLimitMap[loc].tempLL  = Math.min(locationLimitMap[loc].tempLL,  entry.limits.tempLL);
+          locationLimitMap[loc].humidUL = Math.max(locationLimitMap[loc].humidUL, entry.limits.humidUL);
+          locationLimitMap[loc].humidLL = Math.min(locationLimitMap[loc].humidLL, entry.limits.humidLL);
+        }
+      });
+      const newLimitProfiles = Object.values(locationLimitMap);
+
       // Set all chart state at once, then bump chartKey once to rebuild charts
       setLabels(newLabels);
       setTempDS(newTempDS);
       setHumidDS(newHumidDS);
+      setLimitProfiles(newLimitProfiles);
       setChartKey((k) => k + 1);
       setApplied(true);
 
@@ -479,6 +500,7 @@ export default function Dashboard() {
     setTempDS([]);
     setHumidDS([]);
     setLabels([]);
+    setLimitProfiles([]);
     setApplied(false);
     setApiError(null);
     setNoData(false);
@@ -613,7 +635,7 @@ export default function Dashboard() {
                   id="tempChart" title="Temperature"
                   subtitle="Temperature (°C) · Scroll to zoom · Click & drag to pan"
                   datasets={tempDS} labels={labels} yLabel="Temperature (°C)"
-                  limitProfiles={activeLimitProfiles} limitKeyUL="tempUL" limitKeyLL="tempLL"
+                  limitProfiles={limitProfiles} limitKeyUL="tempUL" limitKeyLL="tempLL"
                 />
                 <div className="border-t" />
                 <SensorLineChart
@@ -621,7 +643,7 @@ export default function Dashboard() {
                   id="humidChart" title="Humidity"
                   subtitle="Humidity (%) · Scroll to zoom · Click & drag to pan"
                   datasets={humidDS} labels={labels} yLabel="Humidity (%)"
-                  limitProfiles={activeLimitProfiles} limitKeyUL="humidUL" limitKeyLL="humidLL"
+                  limitProfiles={limitProfiles} limitKeyUL="humidUL" limitKeyLL="humidLL"
                 />
               </div>
             )}
