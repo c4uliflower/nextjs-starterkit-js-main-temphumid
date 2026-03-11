@@ -3,108 +3,88 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, useRef, useEffect, useCallback } from "react";
-import { Users, DollarSign, ShoppingCart, TrendingUp, ChevronDown, Droplets, Thermometer, TriangleAlert, Radio, FileText, Eye, EyeOff } from "lucide-react";
+import { useState, useRef, useEffect, useCallback, memo } from "react";
+import { Droplets, Thermometer, TriangleAlert, Radio, FileText } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { MessageBox } from "@/components/custom/MessageBox";
 import { DashboardCard } from "@/components/custom/DashboardCard";
-import { DatePicker, DateRangePicker, defaultDateRangePresets } from "@/components/ui/date-picker";
+import { DateRangePicker } from "@/components/ui/date-picker";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/custom/Combobox";
+import axios from "@/lib/axios";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 1: DATA LAYER  ← replace contents here when connecting to backend
+// SECTION 1: DATA LAYER
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * LOCATION → SENSORS MAP
- * Shape: { [locationName]: { id, name, floor }[] }
- *
- * TO REPLACE: const SENSOR_MAP = await fetch("/api/locations").then(r => r.json())
- */
+const API_BASE = '/api/temphumid';
+
 const SENSOR_MAP = {
   "Cold Storage": [
-    { id: "cs-s1",       name: "SMT - Cold Storage"      },
-    { id: "cs-s2",       name: "WH - Cold Storage"       },
-    { id: "cs-s3",       name: "WH - Cold Storage 2"     },
+    { id: "P1F1-10", name: "SMT - Cold Storage"      },
+    { id: "P2F1-16", name: "WH - Cold Storage"        },
+    { id: "P2F1-17", name: "WH - Cold Storage 2"      },
   ],
   "P1F1": [
-    { id: "p1f1-s1",     name: "AOI"                     },
-    { id: "p1f1-s2",     name: "Coating"                 },
-    { id: "p1f1-s3",     name: "Dipping"                 },
-    { id: "p1f1-s4",     name: "Dipping2"                },
-    { id: "p1f1-s5",     name: "Server Room"             },
-    { id: "p1f1-s6",     name: "SMT"                     },
-    { id: "p1f1-s7",     name: "SMT MH"                  },
-    { id: "p1f1-s8",     name: "SMT MH Dessicator 1"     },
-    { id: "p1f1-s9",     name: "SMT MH Dessicator 2"     },
-    { id: "p1f1-s10",    name: "SMT MH Dessicator 3"     },
-    { id: "p1f1-s11",    name: "SMT MH Dessicator 4"     },
-    { id: "p1f1-s12",    name: "SMT MH Dessicator 5"     },
-    { id: "p1f1-s13",    name: "SMT MH Dessicator 6"     },
-    { id: "p1f1-s14",    name: "SMT MH Receiving"        },
-    { id: "p1f1-s15",    name: "BGA Rework"              },
-    { id: "p1f1-s16",    name: "SMT - Cold Storage"      },
+    { id: "P1F1-04", name: "AOI"                      },
+    { id: "P1F1-17", name: "Coating"                  },
+    { id: "P1F1-01", name: "Dipping"                  },
+    { id: "P1F1-06", name: "Dipping2"                 },
+    { id: "P1F1-03", name: "Server Room"              },
+    { id: "P1F1-02", name: "SMT"                      },
+    { id: "P1F1-05", name: "SMT MH"                   },
+    { id: "P1F1-09", name: "SMT MH Dessicator 1"      },
+    { id: "P1F1-07", name: "SMT MH Dessicator 2"      },
+    { id: "P1F1-11", name: "SMT MH Dessicator 3"      },
+    { id: "P1F1-12", name: "SMT MH Dessicator 4"      },
+    { id: "P1F1-13", name: "SMT MH Dessicator 5"      },
+    { id: "P1F1-16", name: "SMT MH Dessicator 6"      },
+    { id: "P1F1-14", name: "SMT MH Receiving"         },
+    { id: "P1F1-15", name: "BGA Rework"               },
   ],
   "P1F2": [
-    { id: "p1f2-s1",     name: "Brother Assy 1"          },
-    { id: "p1f2-s2",     name: "Brother Assy 2"          },
-    { id: "p1f2-s3",     name: "JCM PCBA"                },
-    { id: "p1f2-s4",     name: "MH Brother Packaging"    },
+    { id: "P1F2-03", name: "Brother Assy 1"           },
+    { id: "P1F2-02", name: "Brother Assy 2"           },
+    { id: "P1F2-01", name: "JCM PCBA"                 },
+    { id: "P1F2-05", name: "MH Brother Packaging"     },
   ],
   "P2F1": [
-    { id: "p2f1-s1",     name: "FG"                      },
-    { id: "p2f1-s2",     name: "Warehouse Office"        },
-    { id: "p2f1-s3",     name: "WO-North"                },
-    { id: "p2f1-s4",     name: "WO-South - Holding Area" },
-    { id: "p2f1-s5",     name: "WO-S-West-IQC"           },
-    { id: "p2f1-s6",     name: "WO-W South-QA"           },
-    { id: "p2f1-s7",     name: "WH - Cold Storage"       },
-    { id: "p2f1-s8",     name: "WH - Cold Storage 2"     },
+    { id: "P2F1-03", name: "FG"                       },
+    { id: "P2F1-01", name: "Warehouse Office"         },
+    { id: "P2F1-18", name: "WO-North"                 },
+    { id: "P2F1-07", name: "WO-South - Holding Area"  },
+    { id: "P2F1-04", name: "WO-S-West-IQC"            },
+    { id: "P2F1-05", name: "WO-W South-QA"            },
   ],
   "P2F2": [
-    { id: "p2f2-s1",     name: "Calibration Room"        },
-    { id: "p2f2-s2",     name: "CIS"                     },
-    { id: "p2f2-s3",     name: "JCM Assy"                },
-    { id: "p2f2-s4",     name: "WH Brother Packaging"    },
-    { id: "p2f2-s5",     name: "WH-MH JCM Assy"          },
+    { id: "P2F2-04", name: "Calibration Room"         },
+    { id: "P1F1-18", name: "CIS"                      },
+    { id: "P2F2-01", name: "JCM Assy"                 },
+    { id: "P2F2-02", name: "WH Brother Packaging"     },
+    { id: "P2F2-03", name: "WH-MH JCM Assy"           },
   ],
   "P1&2F2": [
-    { id: "bridge-s1",   name: "P1P2_Bridge"             },
+    { id: "P1F2-06", name: "P1P2 Bridge"              },
   ],
   "WH": [
-    { id: "wh-s1",       name: "WH-A"                    },
-    { id: "wh-s2",       name: "WH-B"                    },
-    { id: "wh-s3",       name: "WH-C"                    },
-    { id: "wh-s4",       name: "WH-D"                    },
-    { id: "wh-s5",       name: "WH-E"                    },
-    { id: "wh-s6",       name: "WH-F"                    },
-    { id: "wh-s7",       name: "WH-G"                    },
-    { id: "wh-s8",       name: "WH-H"                    },
-  ],
-  // Unassigned — no location designation provided; kept separate until confirmed
-  "Unassigned": [
-    { id: "unassigned-s1", name: "Facilities"            },
+    { id: "P2F1-08", name: "WH-A"                     },
+    { id: "P2F1-09", name: "WH-B"                     },
+    { id: "P2F1-10", name: "WH-C"                     },
+    { id: "P2F1-11", name: "WH-D"                     },
+    { id: "P2F1-12", name: "WH-E"                     },
+    { id: "P2F1-13", name: "WH-F"                     },
+    { id: "P2F1-14", name: "WH-G"                     },
+    { id: "P2F1-15", name: "WH-H"                     },
   ],
 };
 
-
-// Flat list of all locations
 const ALL_LOCATIONS = Object.keys(SENSOR_MAP);
+const ALL_SENSORS   = Object.values(SENSOR_MAP).flat();
 
-// Flat list of all sensors across all locations
-const ALL_SENSORS = Object.values(SENSOR_MAP).flat();
-
-// Lookup: sensorId → location name  (used for reverse-filtering)
 const SENSOR_LOCATION_MAP = {};
 Object.entries(SENSOR_MAP).forEach(([loc, sensors]) => {
   sensors.forEach((s) => { SENSOR_LOCATION_MAP[s.id] = loc; });
 });
 
-/**
- * UL / LL per location
- * TO REPLACE: fetch(`/api/limits/${locationId}`)
- */
 const LOCATION_LIMITS = {
   "Cold Storage": { tempUL: 18, tempLL: -2,  humidUL: 70, humidLL: 30 },
   "P1F1":         { tempUL: 28, tempLL: 13,  humidUL: 80, humidLL: 40 },
@@ -113,62 +93,12 @@ const LOCATION_LIMITS = {
   "P2F2":         { tempUL: 30, tempLL: 15,  humidUL: 85, humidLL: 35 },
   "P1&2F2":       { tempUL: 28, tempLL: 13,  humidUL: 80, humidLL: 40 },
   "WH":           { tempUL: 30, tempLL: 15,  humidUL: 85, humidLL: 35 },
-  "Unassigned":   { tempUL: 30, tempLL: 13,  humidUL: 85, humidLL: 35 },
 };
-
-/**
- * Summary stats for the 4 top cards.
- * TO REPLACE: fetch("/api/summary")
- */
-const SUMMARY_STATS = {
-  avgTemp:        "24.3°C",
-  avgHumid:       "62.1%",
-  activeSensors:  "21",
-  criticalAlerts: "2",
-};
-
-/**
- * Fetch sensor readings. Swap the body for a real API call.
- */
-async function fetchSensorData(sensorIds, dateFrom, dateTo) {
-  const labels = buildTimeLabels(dateFrom, dateTo);
-  const seriesMap = {};
-  sensorIds.forEach((id) => {
-    const isCS    = id.startsWith("cs-");
-    seriesMap[id] = {
-      temp:  randomSeries(labels.length, isCS ? 3  : 24, isCS ? 2 : 2),
-      humid: randomSeries(labels.length, isCS ? 55 : 62, isCS ? 8 : 6),
-    };
-  });
-  return { labels, seriesMap };
-}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 2: PURE UTILITY FUNCTIONS
+// SECTION 2: UTILITY
 // ─────────────────────────────────────────────────────────────────────────────
-
-function buildTimeLabels(dateFrom, dateTo) {
-  const labels = [];
-  const cur    = new Date(dateFrom + "T00:00:00");
-  const end    = new Date(dateTo   + "T23:59:59");
-  while (cur <= end) {
-    labels.push(
-      new Date(cur).toLocaleString("en-PH", {
-        month: "short", day: "numeric",
-        hour: "2-digit", minute: "2-digit", hour12: false,
-      })
-    );
-    cur.setHours(cur.getHours() + 1);
-  }
-  return labels;
-}
-
-function randomSeries(length, base, spread) {
-  return Array.from({ length }, () =>
-    +(base + (Math.random() - 0.5) * spread * 2).toFixed(1)
-  );
-}
 
 const CHART_COLORS = [
   "#dc3545","#fd7e14","#ffc107","#435ebe","#198754","#0dcaf0",
@@ -176,20 +106,22 @@ const CHART_COLORS = [
   "#9966ff","#ff9f40","#d62728","#2ca02c","#c9cbcf","#f77825",
 ];
 
-// ── Limit line colors — chosen to stand apart from all sensor colors ──────────
-// UL → warm crimson-red    LL → steel blue
-const LIMIT_UL_COLOR = "#c0392b";  // deep red,  distinct from sensor #dc3545 orange-red
-const LIMIT_LL_COLOR = "#2471a3";  // steel blue, distinct from sensor #435ebe button-blue
+const LIMIT_UL_COLOR = "#c0392b";
+const LIMIT_LL_COLOR = "#2471a3";
 
-function buildChartDatasets(sensors, seriesMap, key) {
-  return sensors.map((sensor, i) => ({
-    label:           sensor.name,
-    data:            seriesMap[sensor.id]?.[key] ?? [],
-    borderColor:     CHART_COLORS[i % CHART_COLORS.length],
-    backgroundColor: CHART_COLORS[i % CHART_COLORS.length] + "22",
-    borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false,
-  }));
+function getDefault24hRange() {
+  const to   = new Date();
+  const from = new Date();
+  from.setDate(to.getDate() - 1);
+  return { from, to };
 }
+
+const toISODate = (d) => {
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -217,21 +149,59 @@ function useChartJS() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4: OPTION CONVERTERS
+// SECTION 4: STAT CARDS — isolated component so its poll never touches charts
 // ─────────────────────────────────────────────────────────────────────────────
 
-const toLocationOptions = (locations) =>
-  locations.map((loc) => ({ value: loc, label: loc }));
+/**
+ * Completely isolated from the chart section.
+ * Its setSummary state updates ONLY re-render this component,
+ * so the chart is never destroyed/rebuilt due to polling.
+ */
+const StatCards = memo(function StatCards() {
+  const [summary, setSummary] = useState({
+    avgTemperature:    null,
+    avgHumidity:       null,
+    activeSensorCount: null,
+    breachCount:       null,
+  });
 
-const toSensorOptions = (sensors) =>
-  sensors.map((s) => ({ value: s.id, label: s.name }));
+  useEffect(() => {
+    const fetchSummary = async () => {
+      try {
+        const res = await axios.get(`${API_BASE}/dashboard/summary`);
+        setSummary(res.data.data);
+      } catch (err) {
+        console.error("Failed to fetch dashboard summary:", err);
+      }
+    };
+    fetchSummary();
+    const interval = setInterval(fetchSummary, 10_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fmtTemp  = (v) => v != null ? `${v}°C` : "—";
+  const fmtHumid = (v) => v != null ? `${v}%`  : "—";
+  const fmtCount = (v) => v != null ? `${v}`    : "—";
+
+  return (
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <DashboardCard value={fmtTemp(summary.avgTemperature)}     label="Avg. Temperature" icon={Thermometer}   variant="primary"     />
+      <DashboardCard value={fmtHumid(summary.avgHumidity)}       label="Avg. Humidity"    icon={Droplets}      variant="success"     />
+      <DashboardCard value={fmtCount(summary.activeSensorCount)} label="Active Sensors"   icon={Radio}         variant="warning"     />
+      <DashboardCard value={fmtCount(summary.breachCount)}       label="Critical Alerts"  icon={TriangleAlert} variant="destructive" />
+    </div>
+  );
+});
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5: REUSABLE UI COMPONENTS
+// SECTION 5: CHART COMPONENT
+// Wrapped in memo so it only re-renders when datasets/labels actually change.
 // ─────────────────────────────────────────────────────────────────────────────
 
-function SensorLineChart({ id, title, subtitle, datasets, labels, yLabel, limitProfiles, limitKeyUL, limitKeyLL }) {
+const SensorLineChart = memo(function SensorLineChart({
+  id, title, subtitle, datasets, labels, yLabel, limitProfiles, limitKeyUL, limitKeyLL,
+}) {
   const cvs                     = useRef(null);
   const inst                    = useRef(null);
   const [dragging, setDragging] = useState(false);
@@ -240,32 +210,20 @@ function SensorLineChart({ id, title, subtitle, datasets, labels, yLabel, limitP
     if (!window.Chart || !cvs.current) return;
     if (inst.current) inst.current.destroy();
 
-    // Build limit datasets — one UL line + one LL line per active location profile.
-    // UL = dashed red, LL = dashed blue. Both are purely dashed, no fill.
     const limitDatasets = limitProfiles.flatMap((profile) => {
-      const ulVal = profile[limitKeyUL];
-      const llVal = profile[limitKeyLL];
+      const ulVal  = profile[limitKeyUL];
+      const llVal  = profile[limitKeyLL];
       const suffix = limitProfiles.length > 1 ? ` (${profile.location})` : "";
       return [
         {
-          label:       `UL ${ulVal}${suffix}`,
-          data:        labels.map(() => ulVal),
-          borderColor: LIMIT_UL_COLOR,
-          borderDash:  [8, 5],
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill:        false,
-          order:       0,
+          label: `UL ${ulVal}${suffix}`, data: labels.map(() => ulVal),
+          borderColor: LIMIT_UL_COLOR, borderDash: [8, 5], borderWidth: 1.5,
+          pointRadius: 0, fill: false, order: 0,
         },
         {
-          label:       `LL ${llVal}${suffix}`,
-          data:        labels.map(() => llVal),
-          borderColor: LIMIT_LL_COLOR,
-          borderDash:  [8, 5],
-          borderWidth: 1.5,
-          pointRadius: 0,
-          fill:        false,
-          order:       0,
+          label: `LL ${llVal}${suffix}`, data: labels.map(() => llVal),
+          borderColor: LIMIT_LL_COLOR, borderDash: [8, 5], borderWidth: 1.5,
+          pointRadius: 0, fill: false, order: 0,
         },
       ];
     });
@@ -311,8 +269,7 @@ function SensorLineChart({ id, title, subtitle, datasets, labels, yLabel, limitP
     return () => { if (inst.current) inst.current.destroy(); };
   }, [datasets, labels, limitProfiles, limitKeyUL, limitKeyLL, yLabel]);
 
-  const onMouseDown = useCallback(() => setDragging(true),  []);
-  const onMouseUp   = useCallback(() => setDragging(false), []);
+  const onMouseUp = useCallback(() => setDragging(false), []);
   useEffect(() => {
     window.addEventListener("mouseup", onMouseUp);
     return () => window.removeEventListener("mouseup", onMouseUp);
@@ -323,27 +280,31 @@ function SensorLineChart({ id, title, subtitle, datasets, labels, yLabel, limitP
       <h6>{title}</h6>
       <p className="text-xs text-muted-foreground mt-1 ml-3">{subtitle}</p>
       <div
-        onMouseDown={onMouseDown} onMouseUp={onMouseUp}
+        onMouseDown={() => setDragging(true)} onMouseUp={onMouseUp}
         style={{ height: 320, cursor: dragging ? "grabbing" : "grab", userSelect: "none" }}
       >
         <canvas ref={cvs} id={id} style={{ display: "block", width: "100%", height: "100%" }} />
       </div>
     </div>
   );
-}
+});
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 6: MAIN PAGE
+// SECTION 6: OPTION CONVERTERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Helper: returns a { from, to } range covering the past 24 hours up to now
-function getDefault24hRange() {
-  const to   = new Date();
-  const from = new Date();
-  from.setDate(to.getDate() - 1);
-  return { from, to };
-}
+const toLocationOptions = (locations) =>
+  locations.map((loc) => ({ value: loc, label: loc }));
+
+const toSensorOptions = (sensors) =>
+  sensors.map((s) => ({ value: s.id, label: s.name }));
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 7: MAIN PAGE
+// Only chart state lives here — no summary state, no polling.
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const chartReady = useChartJS();
@@ -351,24 +312,22 @@ export default function Dashboard() {
   // ── Filter state ────────────────────────────────────────────────────────────
   const [selLocationValues, setSelLocationValues] = useState([]);
   const [selSensorValues,   setSelSensorValues]   = useState([]);
+  const [range,             setRange]             = useState(getDefault24hRange());
 
-  // Default date range = past 24 h so Apply is immediately clickable once
-  // a sensor or location is chosen, without the user having to open the picker.
-  const [range, setRange] = useState(getDefault24hRange());
-
-  // ── Chart data state ────────────────────────────────────────────────────────
+  // ── Chart state ─────────────────────────────────────────────────────────────
   const [labels,   setLabels]   = useState([]);
   const [tempDS,   setTempDS]   = useState([]);
   const [humidDS,  setHumidDS]  = useState([]);
   const [chartKey, setChartKey] = useState(0);
   const [applied,  setApplied]  = useState(false);
   const [loading,  setLoading]  = useState(false);
+  const [apiError, setApiError] = useState(null);
+  const [noData,   setNoData]   = useState(false);
 
-  // ── Derive full objects from selected string values ─────────────────────────
+  // ── Derived selections ──────────────────────────────────────────────────────
   const selSensors   = ALL_SENSORS.filter((s) => selSensorValues.includes(s.id));
   const selLocations = selLocationValues;
 
-  // ── CROSS-FILTER LOGIC ──────────────────────────────────────────────────────
   const sensorOptionsList = selLocationValues.length > 0
     ? selLocationValues.flatMap((loc) => SENSOR_MAP[loc] ?? [])
     : ALL_SENSORS;
@@ -379,6 +338,18 @@ export default function Dashboard() {
       )
     : ALL_LOCATIONS;
 
+  const sensorsToFetch = selSensors.length > 0
+    ? selSensors
+    : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? []);
+
+  const canApply = sensorsToFetch.length > 0 && range?.from && range?.to;
+
+  const graphedLocations    = [...new Set(sensorsToFetch.map(s => SENSOR_LOCATION_MAP[s.id]))];
+  const activeLimitProfiles = graphedLocations
+    .map(loc => ({ location: loc, ...(LOCATION_LIMITS[loc] ?? {}) }))
+    .filter(Boolean);
+
+  // ── Filter handlers ─────────────────────────────────────────────────────────
   const handleLocationChange = (newLocValues) => {
     setSelLocationValues(newLocValues);
     if (newLocValues.length > 0) {
@@ -386,6 +357,8 @@ export default function Dashboard() {
       setSelSensorValues((prev) => prev.filter((id) => validIds.includes(id)));
     }
     setApplied(false);
+    setApiError(null);
+    setNoData(false);
   };
 
   const handleSensorChange = (newSensorIds) => {
@@ -398,46 +371,117 @@ export default function Dashboard() {
       });
     }
     setApplied(false);
+    setApiError(null);
+    setNoData(false);
   };
 
-  // Reset range back to "past 24 h" when the user clears the picker entirely,
-  // so Apply never becomes permanently disabled.
   const handleRangeChange = (newRange) => {
     setRange(newRange ?? getDefault24hRange());
     setApplied(false);
+    setApiError(null);
+    setNoData(false);
   };
 
-  const sensorsToFetch = selSensors.length > 0
-    ? selSensors
-    : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? []);
-
-  const canApply = sensorsToFetch.length > 0 && range?.from && range?.to;
-
-  const graphedLocations = [...new Set(sensorsToFetch.map(s => SENSOR_LOCATION_MAP[s.id]))];
-
-  const activeLimitProfiles = graphedLocations
-    .map(loc => ({ location: loc, ...LOCATION_LIMITS[loc] }))
-    .filter(Boolean);
-
+  // ── Apply — fetch batch history ─────────────────────────────────────────────
   const handleApply = async () => {
-    if (!range?.from || !range?.to) return;
+    if (!canApply) return;
     setLoading(true);
-    const fromStr = range.from.toISOString().split("T")[0];
-    const toStr   = range.to.toISOString().split("T")[0];
-    const ids = sensorsToFetch.map((s) => s.id);
-    const { labels: lbl, seriesMap } = await fetchSensorData(ids, fromStr, toStr);
-    setLabels(lbl);
-    setTempDS(buildChartDatasets(sensorsToFetch, seriesMap, "temp"));
-    setHumidDS(buildChartDatasets(sensorsToFetch, seriesMap, "humid"));
-    setChartKey((k) => k + 1);
-    setApplied(true);
-    setLoading(false);
+    setApiError(null);
+    setNoData(false);
+
+    try {
+      const areaIds = sensorsToFetch.map((s) => s.id);
+      const from    = toISODate(range.from);
+      const to      = toISODate(range.to);
+
+      const res = await axios.get(`${API_BASE}/sensors/readings/history/batch`, {
+        params: { areaIds, from, to },
+        paramsSerializer: (params) => {
+          const parts = [];
+          (params.areaIds ?? []).forEach((id) => {
+            parts.push(`areaIds[]=${encodeURIComponent(id)}`);
+          });
+          parts.push(`from=${params.from}`);
+          parts.push(`to=${params.to}`);
+          return parts.join("&");
+        },
+      });
+
+      const batchData = res.data.data;
+
+      const allTimes = new Set();
+      Object.values(batchData).forEach(({ readings }) => {
+        readings.forEach(r => allTimes.add(r.dayTime));
+      });
+      const sortedTimes = [...allTimes].sort();
+
+      if (sortedTimes.length === 0) {
+        setNoData(true);
+        setApplied(true);
+        setLoading(false);
+        return;
+      }
+
+      const newLabels = sortedTimes.map(t =>
+        new Date(t).toLocaleString("en-PH", {
+          month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", hour12: false,
+        })
+      );
+
+      const newTempDS  = [];
+      const newHumidDS = [];
+
+      sensorsToFetch.forEach((sensor, i) => {
+        const entry = batchData[sensor.id];
+        if (!entry) return;
+
+        const readingMap = {};
+        entry.readings.forEach(r => { readingMap[r.dayTime] = r; });
+
+        const tempData  = sortedTimes.map(t => readingMap[t]?.temperature ?? null);
+        const humidData = sortedTimes.map(t => readingMap[t]?.humidity    ?? null);
+
+        const color = CHART_COLORS[i % CHART_COLORS.length];
+        const base  = {
+          label:           entry.lineName || sensor.name,
+          borderColor:     color,
+          backgroundColor: color + "22",
+          borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false,
+          spanGaps: true,
+        };
+
+        newTempDS.push({ ...base, data: tempData });
+        newHumidDS.push({ ...base, data: humidData });
+      });
+
+      // Set all chart state at once, then bump chartKey once to rebuild charts
+      setLabels(newLabels);
+      setTempDS(newTempDS);
+      setHumidDS(newHumidDS);
+      setChartKey((k) => k + 1);
+      setApplied(true);
+
+    } catch (err) {
+      console.error("Failed to fetch batch history:", err);
+      setApiError(
+        err.response?.data?.message ?? "Failed to fetch sensor data. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleClear = () => {
-    setSelLocationValues([]); setSelSensorValues([]);
-    setRange(getDefault24hRange()); // reset to default 24 h instead of undefined
-    setTempDS([]); setHumidDS([]); setApplied(false);
+    setSelLocationValues([]);
+    setSelSensorValues([]);
+    setRange(getDefault24hRange());
+    setTempDS([]);
+    setHumidDS([]);
+    setLabels([]);
+    setApplied(false);
+    setApiError(null);
+    setNoData(false);
   };
 
   const hintText = (() => {
@@ -462,16 +506,15 @@ export default function Dashboard() {
         <p className="mt-1 text-muted-foreground">Temperature and Humidity Monitoring System</p>
       </div>
 
-      {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <DashboardCard value={SUMMARY_STATS.avgTemp}        label="Avg. Temperature" icon={Thermometer}   variant="primary"     />
-        <DashboardCard value={SUMMARY_STATS.avgHumid}       label="Avg. Humidity"    icon={Droplets}      variant="success"     />
-        <DashboardCard value={SUMMARY_STATS.activeSensors}  label="Active Sensors"   icon={Radio}         variant="warning"     />
-        <DashboardCard value={SUMMARY_STATS.criticalAlerts} label="Critical Alerts"  icon={TriangleAlert} variant="destructive" />
-      </div>
+      {/*
+        StatCards is a fully isolated memo component.
+        Its internal setSummary state updates NEVER propagate here,
+        so the chart section below is never re-rendered by polling.
+      */}
+      <StatCards />
 
       {/* Filter + Charts card */}
-      <Card>
+      <Card style={{ border: "1px solid #e9ecef" }}>
         <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
           <div>
             <CardTitle className="text-base">Overview</CardTitle>
@@ -490,8 +533,6 @@ export default function Dashboard() {
 
           {/* Filter row */}
           <div className="flex flex-wrap items-end gap-3 pb-4 border-b">
-
-            {/* Location */}
             <div className="flex flex-col gap-1 min-w-45 flex-1 [&_button]:cursor-pointer">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Location</label>
               <Combobox
@@ -504,8 +545,6 @@ export default function Dashboard() {
                 emptyMessage="No locations found."
               />
             </div>
-
-            {/* Sensor */}
             <div className="flex flex-col gap-1 min-w-45 flex-1 [&_button]:cursor-pointer">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Sensor</label>
               <Combobox
@@ -518,25 +557,22 @@ export default function Dashboard() {
                 emptyMessage="No sensors found."
               />
             </div>
-
-            {/* Date Picker */}
             <div className="flex flex-col gap-1">
               <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Date Range</label>
               <DateRangePicker value={range} onChange={handleRangeChange} />
             </div>
-
           </div>
 
-          {/* Limit line legend hint */}
+          {/* Limit line legend */}
           <div className="flex items-center gap-4 pt-3 pb-1">
             <p className="text-xs text-muted-foreground flex-1">{hintText}</p>
             <div className="flex items-center gap-3 shrink-0">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke={`#c0392b`} strokeWidth="1.5" strokeDasharray="6,4" /></svg>
+                <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="#c0392b" strokeWidth="1.5" strokeDasharray="6,4" /></svg>
                 Upper limit
               </span>
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke={`#2471a3`} strokeWidth="1.5" strokeDasharray="6,4" /></svg>
+                <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="#2471a3" strokeWidth="1.5" strokeDasharray="6,4" /></svg>
                 Lower limit
               </span>
             </div>
@@ -547,6 +583,20 @@ export default function Dashboard() {
             {!chartReady || loading ? (
               <div className="flex items-center justify-center py-16 text-muted-foreground text-sm">
                 {loading ? "Fetching sensor data…" : "Loading Chart.js…"}
+              </div>
+            ) : apiError ? (
+              <div className="flex flex-col items-center justify-center py-16">
+                <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "12px 20px" }} className="text-sm text-destructive text-center max-w-md">
+                  {apiError}
+                </div>
+              </div>
+            ) : applied && noData ? (
+              <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed rounded-lg text-center">
+                <p className="font-semibold text-foreground mb-1">No readings found</p>
+                <p className="text-sm text-muted-foreground">
+                  No data exists for the selected sensor(s) in this date range.<br />
+                  Try a different date range — data may only exist for older dates.
+                </p>
               </div>
             ) : !applied ? (
               <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed rounded-lg text-center">

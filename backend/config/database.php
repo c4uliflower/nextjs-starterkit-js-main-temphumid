@@ -31,8 +31,19 @@ return [
 
     'connections' => [
 
+        'temphumid' => [
+            'driver'   => 'sqlsrv',
+            'host'     => env('DB_HOST_TEMPHUMID', 'localhost'),
+            'port'     => env('DB_PORT_TEMPHUMID', '1433'),
+            'database' => env('DB_DATABASE_TEMPHUMID', 'TempHumid'),
+            'username' => env('DB_USERNAME_TEMPHUMID', ''),
+            'password' => env('DB_PASSWORD_TEMPHUMID', ''),
+            'charset'  => 'utf8',
+            'prefix'   => '',
+            'prefix_indexes' => true,
+        ],
+
         'sqlite' => [
-            'driver' => 'sqlite',
             'url' => env('DB_URL'),
             'database' => env('DB_DATABASE', database_path('database.sqlite')),
             'prefix' => '',

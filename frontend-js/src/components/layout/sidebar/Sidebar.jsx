@@ -37,7 +37,7 @@ export default function Sidebar() {
               collapsed && !isMobile ? "max-w-0 opacity-0" : "max-w-[200px] opacity-100",
             )}
           >
-            MAzercn
+            TempHumid
           </span>
         </div>
       </div>

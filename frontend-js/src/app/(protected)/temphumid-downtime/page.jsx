@@ -980,7 +980,7 @@ export default function DowntimePage() {
       <div style={{ minHeight: "100vh", overflowX: "hidden" }}>
 
         {/* ── Page header ── */}
-        <div style={{ padding: "25px 30px 16px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+        <div style={{ marginTop: 10, padding: "14px 24px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div className="bg-background">
             <h1 className="text-2xl font-bold">Sensor Downtime & Maintenance Recording</h1>
             <p className="text-muted-foreground mt-1">For sensor maintenance only</p>
@@ -991,7 +991,7 @@ export default function DowntimePage() {
         </div>
 
         {/* ── Two-panel layout ── */}
-        <div style={{ padding: "0 30px 20px", display: "flex", gap: 20, alignItems: "flex-start" }}>
+        <div style={{ padding: "14px 24px", display: "flex", gap: 20, alignItems: "flex-start" }}>
           <StopLineListPanel
             records={stopLineList}
             onRowClick={r => { setActiveRecord(r); setMarkDoneOpen(true); }}
@@ -1004,7 +1004,7 @@ export default function DowntimePage() {
         </div>
 
         {/* ── Maintenance History ── */}
-        <div style={{ padding: "0 30px 30px" }}>
+        <div style={{ padding: "14px 24px", }}>
           <MaintenanceHistoryPanel history={maintenanceHistory} />
         </div>
       </div>

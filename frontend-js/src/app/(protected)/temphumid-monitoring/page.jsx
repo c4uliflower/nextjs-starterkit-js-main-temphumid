@@ -2,121 +2,125 @@
 
 import { useState, useEffect } from "react";
 import { DataTable } from "@/components/custom/DataTable";
+import axios from "@/lib/axios";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 1: DATA LAYER  ← replace with real API calls
+// SECTION 1: CONSTANTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+const API_BASE = '/api/temphumid';
+
+// Consolidated inactive areas across ALL map pages.
+// Breaches from these areaIds are suppressed (shown as active/green).
+const INACTIVE_AREAS = new Set([
+  "P2F2-01", // JCM Assy — P2F2
+]);
+
+// Static floor metadata — only ids, labels, images, hrefs, and areaId mappings.
+// Live data (temp, humid, hasData, breach, limits, lastSeen) comes from the API.
 const ALL_FLOORS = [
   {
-    id: "p1f1",
+    id:    "p1f1",
     label: "P1F1",
-    image: "/logo/assets/P1F1-4.jpg",
-    href: "/temphumid-p1f1",
+    image: "/logo/assets/P1F1-6.png",
+    href:  "/temphumid-p1f1",
     sensors: [
-      { id: "aoi",         name: "AOI",                   temp: 24.50, humid: 62.10, hasData: true,  breach: false },
-      { id: "dipping2",    name: "Dipping 2",             temp: 22.40, humid: 60.80, hasData: true,  breach: false },
-      { id: "dipping",     name: "Dipping",               temp: null,  humid: null,  hasData: false, breach: false },
-      { id: "server-room", name: "Server Room",           temp: 17.70, humid: 54.60, hasData: true,  breach: true  },
-      { id: "smt",         name: "SMT",                   temp: 25.10, humid: 49.90, hasData: true,  breach: false },
-      { id: "smt-cs",      name: "SMT - Cold Storage",    temp: 2.25,  humid: 0.00,  hasData: true,  breach: false },
-      { id: "smt-mh",      name: "SMT MH",                temp: null,  humid: null,  hasData: false, breach: false },
-      { id: "smt-mh-rcv",  name: "SMT MH Receiving",      temp: 23.20, humid: 72.20, hasData: true,  breach: true  },
-      { id: "bga-r",       name: "BGA Rework",            temp: 21.40, humid: 71.30, hasData: true,  breach: true  },
-      { id: "coating",     name: "Coating Area",          temp: 21.40, humid: 71.30, hasData: true,  breach: true  },
-      { id: "dess-1", name: "SMT MH Dessicator 1", temp: 21.90, humid: 44.40, hasData: true,  breach: false },
-      { id: "dess-2", name: "SMT MH Dessicator 2", temp: 22.20, humid: 52.30, hasData: true,  breach: true  },
-      { id: "dess-3", name: "SMT MH Dessicator 3", temp: 22.20, humid: 55.70, hasData: true,  breach: true  },
-      { id: "dess-4", name: "SMT MH Dessicator 4", temp: 21.30, humid: 47.80, hasData: true,  breach: false },
-      { id: "dess-5", name: "SMT MH Dessicator 5", temp: 21.30, humid: 37.50, hasData: true,  breach: false },
-      { id: "dess-6", name: "SMT MH Dessicator 6", temp: null,  humid: null,  hasData: false, breach: false },
+      { id: "aoi",         areaId: "P1F1-04", name: "AOI"                  },
+      { id: "dipping2",    areaId: "P1F1-06", name: "Dipping 2"            },
+      { id: "dipping",     areaId: "P1F1-01", name: "Dipping"              },
+      { id: "server-room", areaId: "P1F1-03", name: "Server Room"          },
+      { id: "smt",         areaId: "P1F1-02", name: "SMT"                  },
+      { id: "smt-cs",      areaId: "P1F1-10", name: "SMT - Cold Storage"   },
+      { id: "smt-mh",      areaId: "P1F1-05", name: "SMT MH"               },
+      { id: "smt-mh-rcv",  areaId: "P1F1-14", name: "SMT MH Receiving"     },
+      { id: "bga-r",       areaId: "P1F1-15", name: "BGA Rework"           },
+      { id: "coating",     areaId: "P1F1-17", name: "Coating Area"         },
+      { id: "dess-1",      areaId: "P1F1-09", name: "SMT MH Dessicator 1"  },
+      { id: "dess-2",      areaId: "P1F1-07", name: "SMT MH Dessicator 2"  },
+      { id: "dess-3",      areaId: "P1F1-11", name: "SMT MH Dessicator 3"  },
+      { id: "dess-4",      areaId: "P1F1-12", name: "SMT MH Dessicator 4"  },
+      { id: "dess-5",      areaId: "P1F1-13", name: "SMT MH Dessicator 5"  },
+      { id: "dess-6",      areaId: "P1F1-16", name: "SMT MH Dessicator 6"  },
     ],
   },
   {
-    id: "p1f2",
+    id:    "p1f2",
     label: "P1F2",
     image: "/logo/assets/P1F2.png",
-    href: "/temphumid-p1f2",
+    href:  "/temphumid-p1f2",
     sensors: [
-      { id: "brother-assy-1", name: "Brother Assy 1",       temp: 23.50, humid: 51.30, hasData: true, breach: false },
-      { id: "brother-assy-2", name: "Brother Assy 2",       temp: 23.40, humid: 55.70, hasData: true, breach: false },
-      { id: "jcm-pcba",       name: "JCM PCBA",             temp: 25.30, humid: 56.50, hasData: true, breach: false },
-      { id: "mh-brother-pkg", name: "MH Brother Packaging", temp: 24.20, humid: 48.70, hasData: true, breach: false },
+      { id: "brother-assy-1", areaId: "P1F2-03", name: "Brother Assy 1"       },
+      { id: "brother-assy-2", areaId: "P1F2-02", name: "Brother Assy 2"       },
+      { id: "jcm-pcba",       areaId: "P1F2-01", name: "JCM PCBA"             },
+      { id: "mh-brother-pkg", areaId: "P1F2-05", name: "MH Brother Packaging" },
+      { id: "p1p2-bridge",    areaId: "P1F2-06", name: "P1P2 Bridge"          },
     ],
   },
   {
-    id: "p2f1",
+    id:    "p2f1",
     label: "P2F1",
     image: "/logo/assets/P2F1.png",
-    href: "/temphumid-p2f1",
+    href:  "/temphumid-p2f1",
     sensors: [
-      { id: "fg",               name: "FG",                       temp: 23.10, humid: 58.80, hasData: true, breach: false },
-      { id: "warehouse-office", name: "Warehouse Office",         temp: 23.80, humid: 60.90, hasData: true, breach: false },
-      { id: "wh-cs",            name: "WH - Cold Storage",        temp: 4.00,  humid: 0.00,  hasData: true, breach: true  },
-      { id: "wh-cs2",           name: "WH - Cold Storage 2",      temp: 2.75,  humid: 0.00,  hasData: true, breach: true  },
-      { id: "wo-north",         name: "WO-North",                 temp: 24.70, humid: 57.80, hasData: true, breach: false },
-      { id: "wo-south-ha",      name: "WO-South Holding Area",    temp: 25.00, humid: 67.90, hasData: true, breach: false },
-      { id: "wo-sw-iqc",        name: "WO-S-West-IQC",            temp: 24.00, humid: 63.30, hasData: true, breach: false },
-      { id: "wo-w-south-qa",    name: "WO-W South-QA",            temp: 24.30, humid: 60.90, hasData: true, breach: false },
+      { id: "fg",               areaId: "P2F1-03", name: "FG"                      },
+      { id: "warehouse-office", areaId: "P2F1-01", name: "Warehouse Office"        },
+      { id: "wh-cs",            areaId: "P2F1-16", name: "WH - Cold Storage"       },
+      { id: "wh-cs2",           areaId: "P2F1-17", name: "WH - Cold Storage 2"     },
+      { id: "wo-north",         areaId: "P2F1-18", name: "WO-North"               },
+      { id: "wo-south-ha",      areaId: "P2F1-07", name: "WO-South Holding Area"  },
+      { id: "wo-sw-iqc",        areaId: "P2F1-04", name: "WO-S-West-IQC"          },
+      { id: "wo-w-south-qa",    areaId: "P2F1-05", name: "WO-W South-QA"          },
     ],
   },
   {
-    id: "p2f2",
+    id:    "p2f2",
     label: "P2F2",
     image: "/logo/assets/P2F2.png",
-    href: "/temphumid-p2f2",
+    href:  "/temphumid-p2f2",
     sensors: [
-      { id: "calibration-room", name: "Calibration Room",     temp: 22.30, humid: 53.70, hasData: true,  breach: false },
-      { id: "jcm-assy",         name: "JCM Assy",             temp: 26.50, humid: 50.40, hasData: true,  breach: false },
-      { id: "wh-brother-pkg",   name: "WH Brother Packaging", temp: 21.70, humid: 57.20, hasData: true,  breach: false },
-      { id: "wh-mh-jcm-assy",   name: "WH-MH JCM Assy",      temp: null,  humid: null,  hasData: false, breach: false },
-      { id: "cis",              name: "CIS",                  temp: 26.00, humid: 54.60, hasData: true,  breach: false },
+      { id: "calibration-room", areaId: "P2F2-04", name: "Calibration Room"     },
+      { id: "jcm-assy",         areaId: "P2F2-01", name: "JCM Assy"             }, // INACTIVE
+      { id: "wh-brother-pkg",   areaId: "P2F2-02", name: "WH Brother Packaging" },
+      { id: "wh-mh-jcm-assy",   areaId: "P2F2-03", name: "WH-MH JCM Assy"      },
+      { id: "cis",              areaId: "P1F1-16", name: "CIS"                  }, // temp areaId
     ],
   },
   {
-    id: "p1and2f2",
-    label: "P1&2F2",
-    image: "/logo/assets/P1 & P2F2-1.png",
-    href: "/temphumid-p1and2f2",
-    sensors: [
-      { id: "p1p2-bridge", name: "P1P2 Bridge", temp: 25.40, humid: 65.10, hasData: true, breach: false },
-    ],
-  },
-  {
-    id: "wh",
+    id:    "wh",
     label: "WH",
     image: "/logo/assets/WH.png",
-    href: "/temphumid-wh",
+    href:  "/temphumid-wh",
     sensors: [
-      { id: "wh-a", name: "WH - A", temp: 27.60, humid: 74.60, hasData: true, breach: true  },
-      { id: "wh-b", name: "WH - B", temp: 28.60, humid: 62.10, hasData: true, breach: false },
-      { id: "wh-c", name: "WH - C", temp: 26.80, humid: 66.70, hasData: true, breach: false },
-      { id: "wh-d", name: "WH - D", temp: 28.70, humid: 65.90, hasData: true, breach: false },
-      { id: "wh-e", name: "WH - E", temp: 29.80, humid: 61.20, hasData: true, breach: false },
-      { id: "wh-f", name: "WH - F", temp: 26.90, humid: 67.10, hasData: true, breach: false },
-      { id: "wh-g", name: "WH - G", temp: 28.50, humid: 57.40, hasData: true, breach: false },
-      { id: "wh-h", name: "WH - H", temp: 30.00, humid: 59.70, hasData: true, breach: false },
+      { id: "wh-a", areaId: "P2F1-08", name: "WH-A" },
+      { id: "wh-b", areaId: "P2F1-09", name: "WH-B" },
+      { id: "wh-c", areaId: "P2F1-10", name: "WH-C" },
+      { id: "wh-d", areaId: "P2F1-11", name: "WH-D" },
+      { id: "wh-e", areaId: "P2F1-12", name: "WH-E" },
+      { id: "wh-f", areaId: "P2F1-13", name: "WH-F" },
+      { id: "wh-g", areaId: "P2F1-14", name: "WH-G" },
+      { id: "wh-h", areaId: "P2F1-15", name: "WH-H" },
+    ],
+  },
+  {
+    id:    "p1and2f2",
+    label: "P1&2F2",
+    image: "/logo/assets/P1 & P2F2-1.png",
+    href:  "/temphumid-p12f2",
+    sensors: [
+      { id: "p1p2-bridge", areaId: "P1F2-06", name: "P1P2 Bridge" },
     ],
   },
 ];
 
-const SENSOR_TABLE_DATA = ALL_FLOORS.flatMap((floor) =>
-  floor.sensors.map((sensor) => ({
-    id:        `${floor.id}__${sensor.id}`,
-    floor:     floor.label,
-    floorHref: floor.href,
-    name:      sensor.name,
-    temp:      sensor.temp,
-    humid:     sensor.humid,
-    hasData:   sensor.hasData,
-    breach:    sensor.breach,
-    lastSeen:  sensor.hasData ? "2026-03-05 08:00:00" : "N/A",
-    tempLL:    sensor.id.includes("cs") ? -5  : 18,
-    tempUL:    sensor.id.includes("cs") ? 10  : 28,
-    humidLL:   sensor.id.includes("dess") ? 10 : 40,
-    humidUL:   sensor.id.includes("dess") ? 50 : 70,
-  }))
-);
+// Floor slug map — used for the API ?floor= param
+const FLOOR_SLUG = {
+  p1f1:     "p1f1",
+  p1f2:     "p1f2",
+  p2f1:     "p2f1",
+  p2f2:     "p2f2",
+  wh:       "wh",
+  p1and2f2: "p12f2",
+};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -131,11 +135,6 @@ const GLOBAL_STYLES = `
   @keyframes dotPulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50%       { opacity: .4; transform: scale(.75); }
-  }
-  @keyframes markerPulse {
-    0%   { transform: translate(-50%,-50%) scale(1);   opacity: .9; }
-    70%  { transform: translate(-50%,-50%) scale(2.8); opacity: 0;  }
-    100% { transform: translate(-50%,-50%) scale(1);   opacity: 0;  }
   }
   @keyframes slideIn {
     from { opacity: 0; transform: translateY(12px); }
@@ -154,11 +153,7 @@ function getSensorStatus(sensor) {
   return "active";
 }
 
-const STATUS_PRIORITY = {
-  breach:  0,
-  no_data: 1,
-  active:  2,
-};
+const STATUS_PRIORITY = { breach: 0, no_data: 1, active: 2 };
 
 function getFloorStatus(floor) {
   let top = "active";
@@ -200,7 +195,7 @@ function StatusDot({ status, size = 8 }) {
     <div style={{
       width: size, height: size, borderRadius: "50%",
       background: cfg.dot, flexShrink: 0,
-      animation: (status === "breach") ? "dotPulse 1.2s ease-in-out infinite" : "none",
+      animation: status === "breach" ? "dotPulse 1.2s ease-in-out infinite" : "none",
     }} />
   );
 }
@@ -226,8 +221,8 @@ function FloorCard({ floor, onClick }) {
         background: "#fff", transition: "transform .15s",
         display: "flex", flexDirection: "column",
       }}
-      onMouseEnter={(e) => { e.currentTarget.style.transform = "translateY(-3px)"; }}
-      onMouseLeave={(e) => { e.currentTarget.style.transform = "translateY(0)"; }}
+      onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
     >
       <div style={{ flex: 1, overflow: "hidden", background: "#f8f9fa", minHeight: 180, maxHeight: 240 }}>
         <img src={floor.image} alt={floor.label}
@@ -252,10 +247,12 @@ function SensorStatusRow({ sensor, index }) {
     <div style={{
       background: cfg.bg, border: `1px solid ${cfg.color}25`,
       borderRadius: 5, marginBottom: 8, overflow: "hidden",
-      animation: `slideIn .2s ease both`, animationDelay: `${index * 0.05}s`,
+      animation: "slideIn .2s ease both", animationDelay: `${index * 0.05}s`,
     }}>
-      <div onClick={() => setOpen((v) => !v)}
-        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", userSelect: "none" }}>
+      <div
+        onClick={() => setOpen(v => !v)}
+        style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", cursor: "pointer", userSelect: "none" }}
+      >
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <StatusDot status={status} size={8} />
           <span style={{ fontWeight: 600, fontSize: 14, color: cfg.color }}>{sensor.name}</span>
@@ -309,7 +306,7 @@ function FloorModal({ floor, onClose }) {
   }
 
   useEffect(() => {
-    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    const handler = e => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
   }, [onClose]);
@@ -374,8 +371,8 @@ function FloorModal({ floor, onClose }) {
             <div style={{ padding: "12px 16px", borderTop: "1px solid #e9ecef", background: "#fff" }}>
               <a href={floor.href}
                 style={{ display: "block", textAlign: "center", padding: "10px", borderRadius: 5, background: "#435ebe", color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none", cursor: "pointer", transition: "background .15s" }}
-                onMouseEnter={(e) => { e.currentTarget.style.background = "#3347a8"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.background = "#435ebe"; }}>
+                onMouseEnter={e => { e.currentTarget.style.background = "#3347a8"; }}
+                onMouseLeave={e => { e.currentTarget.style.background = "#435ebe"; }}>
                 Open Full Map →
               </a>
             </div>
@@ -388,7 +385,7 @@ function FloorModal({ floor, onClose }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5: SENSOR TABLE
+// SECTION 5: SENSOR TABLE COLUMNS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SENSOR_TABLE_COLUMNS = [
@@ -413,16 +410,22 @@ const SENSOR_TABLE_COLUMNS = [
   {
     id: "tempLimits",
     header: "Temp Limits (°C)",
-    cell: ({ row }) => `${row.original.tempLL} – ${row.original.tempUL}`,
+    cell: ({ row }) =>
+      row.original.tempLL != null && row.original.tempUL != null
+        ? `${row.original.tempLL} – ${row.original.tempUL}`
+        : "—",
   },
   {
     id: "humidLimits",
     header: "Humid Limits (%)",
-    cell: ({ row }) => `${row.original.humidLL} – ${row.original.humidUL}`,
+    cell: ({ row }) =>
+      row.original.humidLL != null && row.original.humidUL != null
+        ? `${row.original.humidLL} – ${row.original.humidUL}`
+        : "—",
   },
   {
     id: "status",
-    accessorFn: (row) => getSensorStatus(row),
+    accessorFn: row => getSensorStatus(row),
     header: "Status",
     cell: ({ row }) => {
       const status = getSensorStatus(row.original);
@@ -438,7 +441,11 @@ const SENSOR_TABLE_COLUMNS = [
       );
     },
   },
-  { accessorKey: "lastSeen", header: "Last Seen" },
+  {
+    accessorKey: "lastSeen",
+    header: "Last Seen",
+    cell: ({ row }) => row.original.lastSeen ?? "—",
+  },
 ];
 
 
@@ -447,7 +454,103 @@ const SENSOR_TABLE_COLUMNS = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
+  const [floors,      setFloors]      = useState(ALL_FLOORS);
   const [activeFloor, setActiveFloor] = useState(null);
+  const [loading,     setLoading]     = useState(true);
+
+  useEffect(() => {
+    let interval;
+
+    const fetchAllFloors = async () => {
+      try {
+        // Fetch all floors in parallel — one request per floor slug
+        const results = await Promise.all(
+          ALL_FLOORS.map(floor =>
+            axios.get(`${API_BASE}/sensors/readings/current`, {
+              params: { floor: FLOOR_SLUG[floor.id] },
+            }).then(res => ({ floorId: floor.id, data: res.data.data }))
+              .catch(() => ({ floorId: floor.id, data: [] }))
+          )
+        );
+
+        // Build a map: floorId → { [areaId]: liveReading }
+        const liveByFloor = {};
+        results.forEach(({ floorId, data }) => {
+          liveByFloor[floorId] = {};
+          data.forEach(d => { liveByFloor[floorId][d.areaId] = d; });
+        });
+
+        // Merge live data into floor/sensor structure
+        setFloors(ALL_FLOORS.map(floor => ({
+          ...floor,
+          sensors: floor.sensors.map(sensor => {
+            const live = liveByFloor[floor.id]?.[sensor.areaId];
+            if (!live) return { ...sensor, hasData: false, breach: false, temp: null, humid: null, lastSeen: null, limits: null };
+
+            // Respect INACTIVE_AREAS — suppress breach for inactive sensors
+            const isInactive = INACTIVE_AREAS.has(sensor.areaId);
+            const breach = live.status === "breach" && !isInactive;
+
+            return {
+              ...sensor,
+              temp:     live.temperature,
+              humid:    live.humidity,
+              hasData:  live.hasData,
+              lastSeen: live.lastSeen,
+              breach,
+              limits:   live.limits,
+              tempUL:   live.limits?.tempUL  ?? null,
+              tempLL:   live.limits?.tempLL  ?? null,
+              humidUL:  live.limits?.humidUL ?? null,
+              humidLL:  live.limits?.humidLL ?? null,
+            };
+          }),
+        })));
+
+        // If modal is open, keep it in sync with fresh data
+        setActiveFloor(prev => {
+          if (!prev) return null;
+          const updated = floors.find(f => f.id === prev.id);
+          return updated ?? prev;
+        });
+
+      } catch (err) {
+        console.error("Failed to fetch monitoring data:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllFloors();
+    interval = setInterval(fetchAllFloors, 10_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Build flat table data from live floors state
+  const tableData = floors.flatMap(floor =>
+    floor.sensors.map(sensor => ({
+      id:       `${floor.id}__${sensor.id}`,
+      floor:    floor.label,
+      name:     sensor.name,
+      temp:     sensor.temp   ?? null,
+      humid:    sensor.humid  ?? null,
+      hasData:  sensor.hasData ?? false,
+      breach:   sensor.breach  ?? false,
+      lastSeen: sensor.lastSeen ?? null,
+      tempUL:   sensor.tempUL  ?? null,
+      tempLL:   sensor.tempLL  ?? null,
+      humidUL:  sensor.humidUL ?? null,
+      humidLL:  sensor.humidLL ?? null,
+    }))
+  );
+
+  const breachFloorCount = floors.filter(f => getFloorStatus(f) === "breach").length;
+
+  const handleCardClick = (floor) => {
+    // Pass the live floor object (not stale ALL_FLOORS entry)
+    const live = floors.find(f => f.id === floor.id) ?? floor;
+    setActiveFloor(live);
+  };
 
   return (
     <>
@@ -456,38 +559,43 @@ export default function MonitoringPage() {
       <div style={{ minHeight: "100vh", overflowX: "hidden" }}>
 
         {/* ── Page title ── */}
-        <div style={{ padding: "25px 30px 16px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <div style={{ padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div className="bg-background">
             <h1 className="text-2xl font-bold">Monitoring</h1>
             <p className="text-muted-foreground mt-1">
-              Live status across all floors · {ALL_FLOORS.filter((f) => getFloorStatus(f) === "breach").length} floor{ALL_FLOORS.filter((f) => getFloorStatus(f) === "breach").length !== 1 ? "s" : ""} in breach
+              {loading
+                ? "Loading live data…"
+                : `Live status across all floors · ${breachFloorCount} floor${breachFloorCount !== 1 ? "s" : ""} in breach`
+              }
             </p>
           </div>
 
-          {ALL_FLOORS.some((f) => getFloorStatus(f) === "breach") && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 5, padding: "6px 14px", animation: "borderBlink 1.4s ease-in-out infinite" }}>
+          {!loading && floors.some(f => getFloorStatus(f) === "breach") && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 5, padding: "14px 24px", animation: "borderBlink 1.4s ease-in-out infinite" }}>
               <BreachDot />
               <span style={{ fontSize: 13, fontWeight: 700, color: "#dc3545" }}>ALARM ACTIVE</span>
             </div>
           )}
         </div>
 
-        <div style={{ padding: "24px 32px", display: "flex", flexDirection: "column", gap: 28 }}>
+        <div style={{ padding: "14px 24px", display: "flex", flexDirection: "column", gap: 28 }}>
 
           {/* ── Floor grid ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
-            {ALL_FLOORS.map((floor) => (
-              <FloorCard key={floor.id} floor={floor} onClick={setActiveFloor} />
+            {floors.map(floor => (
+              <FloorCard key={floor.id} floor={floor} onClick={handleCardClick} />
             ))}
           </div>
 
           {/* ── Activity Log ── */}
           <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "20px 24px" }}>
             <p className="font-bold mb-4">Activity Log</p>
-            {SENSOR_TABLE_DATA.length === 0 ? (
+            {loading ? (
+              <p className="text-sm text-muted-foreground text-center" style={{ padding: "24px 0" }}>Loading sensor data…</p>
+            ) : tableData.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center" style={{ padding: "24px 0" }}>No sensor data available.</p>
             ) : (
-              <DataTable columns={SENSOR_TABLE_COLUMNS} data={SENSOR_TABLE_DATA} />
+              <DataTable columns={SENSOR_TABLE_COLUMNS} data={tableData} />
             )}
           </div>
 

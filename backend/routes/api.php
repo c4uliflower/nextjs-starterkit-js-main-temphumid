@@ -5,6 +5,9 @@ use App\Http\Controllers\AccessControl\RoleAssignmentRuleController;
 use App\Http\Controllers\AccessControl\RoleManagementController;
 use App\Http\Controllers\AccessControl\UserAccessController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\TempHumid\SensorController;
+use App\Http\Controllers\TempHumid\SensorLimitController;
+use App\Http\Controllers\TempHumid\SensorReadingController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:mat-auth'])->group(function () {
@@ -38,5 +41,17 @@ Route::middleware(['auth:mat-auth'])->group(function () {
             Route::post('/rules', [RoleAssignmentRuleController::class, 'store']);
             Route::put('/rules/{ruleId}', [RoleAssignmentRuleController::class, 'update']);
             Route::delete('/rules/{ruleId}', [RoleAssignmentRuleController::class, 'destroy']);
+        });
+
+    Route::prefix('temphumid')->group(function (): void {
+        Route::get('/sensors/readings/history/batch', [SensorReadingController::class, 'batchHistory']);
+        Route::get('/sensors/{areaId}/readings/history', [SensorReadingController::class, 'history']);
+        Route::get('/sensors', [SensorController::class, 'index']);
+        Route::get('/sensors/readings/current', [SensorController::class, 'currentReadings']);
+        Route::get('/dashboard/summary', [SensorController::class, 'summary']);
+        Route::get('/sensors/{areaId}/readings/history', [SensorReadingController::class, 'history']);
+        Route::get('/sensors/{areaId}/limits', [SensorLimitController::class, 'show']);
+        Route::post('/sensors/{areaId}/limits', [SensorLimitController::class, 'update']);
+        Route::post('/sensors/limits/batch', [SensorLimitController::class, 'batchUpdate']);
         });
 });
