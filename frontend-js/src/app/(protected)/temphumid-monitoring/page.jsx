@@ -40,7 +40,7 @@ const ALL_FLOORS = [
       { id: "dess-3",      areaId: "P1F1-11", name: "SMT MH Dessicator 3"  },
       { id: "dess-4",      areaId: "P1F1-12", name: "SMT MH Dessicator 4"  },
       { id: "dess-5",      areaId: "P1F1-13", name: "SMT MH Dessicator 5"  },
-      { id: "dess-6",      areaId: "P1F1-16", name: "SMT MH Dessicator 6"  },
+      { id: "dess-6",      areaId: "P1F1-18", name: "SMT MH Dessicator 6"  },
     ],
   },
   {
