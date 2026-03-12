@@ -41,7 +41,7 @@ const SENSOR_MAP = {
     { id: "P1F1-11", name: "SMT MH Dessicator 3"      },
     { id: "P1F1-12", name: "SMT MH Dessicator 4"      },
     { id: "P1F1-13", name: "SMT MH Dessicator 5"      },
-    { id: "P1F1-16", name: "SMT MH Dessicator 6"      },
+    { id: "P1F1-18", name: "SMT MH Dessicator 6"      },
     { id: "P1F1-14", name: "SMT MH Receiving"         },
     { id: "P1F1-15", name: "BGA Rework"               },
   ],
@@ -61,7 +61,7 @@ const SENSOR_MAP = {
   ],
   "P2F2": [
     { id: "P2F2-04", name: "Calibration Room"         },
-    { id: "P1F1-18", name: "CIS"                      }, // temporary — update when DB corrected (ALREADY CORRECTED)
+    { id: "P1F1-16", name: "CIS"                      }, // temporary — update when DB corrected (ALREADY CORRECTED)
     { id: "P2F2-01", name: "JCM Assy"                 },
     { id: "P2F2-02", name: "WH Brother Packaging"     },
     { id: "P2F2-03", name: "WH-MH JCM Assy"           },
