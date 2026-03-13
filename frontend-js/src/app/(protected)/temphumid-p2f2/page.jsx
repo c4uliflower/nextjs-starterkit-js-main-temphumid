@@ -18,7 +18,6 @@ const FLOOR_PLAN_IMAGE = "/logo/assets/P2F2-1.png";
 
 const INACTIVE_AREAS = new Set([
   // "P2F2-01",
-  "P2F2-01",
 ]);
 
 // Verified from Temp_Logger_Chip_ID (Plant='2', Floor='2')

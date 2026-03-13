@@ -296,7 +296,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
               const list = sensors.filter(s => s.group === group);
               if (!list.find(s => s.id === activeId)) return null;
               return (
-                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving}
+                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving || loading}
                   onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>
                   Apply to all {group.toLowerCase()}
                 </Button>
