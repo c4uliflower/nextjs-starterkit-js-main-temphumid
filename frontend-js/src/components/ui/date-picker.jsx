@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
+
 // ── Default presets ──────────────────────────────────
 export const defaultDateRangePresets = [
   { label: "Today", range: () => ({ from: new Date(), to: new Date() }) },
@@ -92,6 +93,7 @@ function DatePicker({
     </Popover>
   );
 }
+
 function DateRangePicker({
   value,
   onChange,

@@ -280,7 +280,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
         </div>
       </div>
       <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
-        {saving           && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
+        {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
         {loading && !saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Loading current limits…</span>}
         <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
         <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || loading || !hasChanges}>{saving ? "Saving…" : loading ? "Loading…" : "Save All"}</Button>
