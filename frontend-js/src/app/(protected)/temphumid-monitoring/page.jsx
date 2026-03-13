@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { DataTable } from "@/components/custom/DataTable";
 import axios from "@/lib/axios";
 
@@ -15,6 +15,10 @@ const API_BASE = '/api/temphumid';
 const INACTIVE_AREAS = new Set([
   "P2F2-01", // JCM Assy — P2F2
 ]);
+
+// Module-level cache — persists across page navigations (component unmount/remount).
+// Populated after first successful fetch so switching pages shows last known data instantly.
+let floorsCache = null;
 
 // Static floor metadata — only ids, labels, images, hrefs, and areaId mappings.
 // Live data (temp, humid, hasData, breach, limits, lastSeen) comes from the API.
@@ -40,7 +44,7 @@ const ALL_FLOORS = [
       { id: "dess-3",      areaId: "P1F1-11", name: "SMT MH Dessicator 3"  },
       { id: "dess-4",      areaId: "P1F1-12", name: "SMT MH Dessicator 4"  },
       { id: "dess-5",      areaId: "P1F1-13", name: "SMT MH Dessicator 5"  },
-      { id: "dess-6",      areaId: "P1F1-18", name: "SMT MH Dessicator 6"  },
+      //{ id: "dess-6",      areaId: "P1F1-16", name: "SMT MH Dessicator 6"  },
     ],
   },
   {
@@ -53,7 +57,6 @@ const ALL_FLOORS = [
       { id: "brother-assy-2", areaId: "P1F2-02", name: "Brother Assy 2"       },
       { id: "jcm-pcba",       areaId: "P1F2-01", name: "JCM PCBA"             },
       { id: "mh-brother-pkg", areaId: "P1F2-05", name: "MH Brother Packaging" },
-      { id: "p1p2-bridge",    areaId: "P1F2-06", name: "P1P2 Bridge"          },
     ],
   },
   {
@@ -140,6 +143,9 @@ const GLOBAL_STYLES = `
     from { opacity: 0; transform: translateY(12px); }
     to   { opacity: 1; transform: translateY(0);    }
   }
+  @keyframes spinLoader {
+    to { transform: rotate(360deg); }
+  }
 `;
 
 
@@ -202,7 +208,42 @@ function StatusDot({ status, size = 8 }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4: FLOOR CARD & MODAL COMPONENTS
+// SECTION 4: LOADING OVERLAY
+// Blocks the entire page on first fetch — disappears once data arrives.
+// Subsequent polls run silently in the background without showing this.
+// ─────────────────────────────────────────────────────────────────────────────
+
+function LoadingOverlay() {
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 200,
+      background: "rgba(0,0,0,.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+    }}>
+      <div style={{
+        background: "#fff", borderRadius: 10, padding: "36px 48px",
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 20,
+        boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260,
+      }}>
+        {/* Spinner */}
+        <div style={{
+          width: 44, height: 44, borderRadius: "50%",
+          border: "4px solid #e9ecef",
+          borderTop: "4px solid #435ebe",
+          animation: "spinLoader 0.8s linear infinite",
+        }} />
+        <div style={{ textAlign: "center" }}>
+          <p style={{ fontWeight: 700, fontSize: 15, color: "#212529", margin: 0 }}>Fetching sensor data</p>
+          <p style={{ fontSize: 12, color: "#6c757d", marginTop: 6 }}>Please wait while live readings are loaded…</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 5: FLOOR CARD & MODAL COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 function FloorCard({ floor, onClick }) {
@@ -385,7 +426,7 @@ function FloorModal({ floor, onClose }) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5: SENSOR TABLE COLUMNS
+// SECTION 6: SENSOR TABLE COLUMNS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SENSOR_TABLE_COLUMNS = [
@@ -450,28 +491,44 @@ const SENSOR_TABLE_COLUMNS = [
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 6: MAIN PAGE
+// SECTION 7: MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
-  const [floors,      setFloors]      = useState(ALL_FLOORS);
+  // If cache exists, start with it so switching back shows data instantly.
+  // loading is based on whether any sensor actually has real data yet —
+  // not on timing or cache presence. Modal disappears the moment first readings arrive.
+  const hasLiveData = (floorList) => floorList.some(f => f.sensors.some(s => s.hasData));
+  const [floors,      setFloors]      = useState(floorsCache ?? ALL_FLOORS);
   const [activeFloor, setActiveFloor] = useState(null);
-  const [loading,     setLoading]     = useState(true);
+  const [loading,     setLoading]     = useState(!hasLiveData(floorsCache ?? ALL_FLOORS));
+  const abortRef                      = useRef(null);
 
   useEffect(() => {
-    let interval;
-
     const fetchAllFloors = async () => {
+      // Cancel any in-flight requests from a previous cycle or navigation
+      if (abortRef.current) abortRef.current.abort();
+      abortRef.current = new AbortController();
+      const signal = abortRef.current.signal;
+
       try {
         // Fetch all floors in parallel — one request per floor slug
         const results = await Promise.all(
           ALL_FLOORS.map(floor =>
             axios.get(`${API_BASE}/sensors/readings/current`, {
               params: { floor: FLOOR_SLUG[floor.id] },
+              signal,
             }).then(res => ({ floorId: floor.id, data: res.data.data }))
-              .catch(() => ({ floorId: floor.id, data: [] }))
+              .catch(err => {
+                // Ignore abort errors — page was navigated away
+                if (axios.isCancel?.(err) || err?.name === "CanceledError") return null;
+                return { floorId: floor.id, data: [] };
+              })
           )
         );
+
+        // If any request was aborted, bail out — don't update state
+        if (results.some(r => r === null)) return;
 
         // Build a map: floorId → { [areaId]: liveReading }
         const liveByFloor = {};
@@ -481,7 +538,7 @@ export default function MonitoringPage() {
         });
 
         // Merge live data into floor/sensor structure
-        setFloors(ALL_FLOORS.map(floor => ({
+        const newFloors = ALL_FLOORS.map(floor => ({
           ...floor,
           sensors: floor.sensors.map(sensor => {
             const live = liveByFloor[floor.id]?.[sensor.areaId];
@@ -505,25 +562,36 @@ export default function MonitoringPage() {
               humidLL:  live.limits?.humidLL ?? null,
             };
           }),
-        })));
+        }));
+
+        // Update cache so next navigation shows this data instantly
+        floorsCache = newFloors;
+        setFloors(newFloors);
+
+        // Hide loading modal once any sensor has real data
+        if (hasLiveData(newFloors)) setLoading(false);
 
         // If modal is open, keep it in sync with fresh data
         setActiveFloor(prev => {
           if (!prev) return null;
-          const updated = floors.find(f => f.id === prev.id);
-          return updated ?? prev;
+          return newFloors.find(f => f.id === prev.id) ?? prev;
         });
 
       } catch (err) {
         console.error("Failed to fetch monitoring data:", err);
       } finally {
-        setLoading(false);
+        // Only clear loading on first load — subsequent polls don't show loading
       }
     };
 
     fetchAllFloors();
-    interval = setInterval(fetchAllFloors, 10_000);
-    return () => clearInterval(interval);
+    const interval = setInterval(() => fetchAllFloors(), 30_000);
+
+    return () => {
+      clearInterval(interval);
+      // Cancel any in-flight requests when navigating away
+      if (abortRef.current) abortRef.current.abort();
+    };
   }, []);
 
   // Build flat table data from live floors state
@@ -556,11 +624,14 @@ export default function MonitoringPage() {
     <>
       <style>{GLOBAL_STYLES}</style>
 
+      {/* ── Loading overlay — blocks page on first fetch only ── */}
+      {loading && <LoadingOverlay />}
+
       <div style={{ minHeight: "100vh", overflowX: "hidden" }}>
 
         {/* ── Page title ── */}
         <div style={{ padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div className="bg-background">
+          <div className="bg-background mt-4">
             <h1 className="text-2xl font-bold">Monitoring</h1>
             <p className="text-muted-foreground mt-1">
               {loading
@@ -590,9 +661,7 @@ export default function MonitoringPage() {
           {/* ── Activity Log ── */}
           <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "20px 24px" }}>
             <p className="font-bold mb-4">Activity Log</p>
-            {loading ? (
-              <p className="text-sm text-muted-foreground text-center" style={{ padding: "24px 0" }}>Loading sensor data…</p>
-            ) : tableData.length === 0 ? (
+            {tableData.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center" style={{ padding: "24px 0" }}>No sensor data available.</p>
             ) : (
               <DataTable columns={SENSOR_TABLE_COLUMNS} data={tableData} />

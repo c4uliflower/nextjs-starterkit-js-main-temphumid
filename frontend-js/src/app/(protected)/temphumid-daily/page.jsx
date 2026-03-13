@@ -18,6 +18,9 @@ import axios from "@/lib/axios";
 
 const API_BASE = '/api/temphumid';
 
+// Module-level cache — persists across page navigations, cleared only on full reload
+let summaryCache = null;
+
 /**
  * SENSOR_MAP — keyed by location label, values use real areaIds from DB.
  * These areaIds are passed directly to the backend for lookup in Temp_Logger_Chip_ID.
@@ -61,7 +64,7 @@ const SENSOR_MAP = {
   ],
   "P2F2": [
     { id: "P2F2-04", name: "Calibration Room"         },
-    { id: "P1F1-16", name: "CIS"                      }, // temporary — update when DB corrected (ALREADY CORRECTED)
+    { id: "P1F1-16", name: "CIS"                      },
     { id: "P2F2-01", name: "JCM Assy"                 },
     { id: "P2F2-02", name: "WH Brother Packaging"     },
     { id: "P2F2-03", name: "WH-MH JCM Assy"           },
@@ -121,9 +124,68 @@ const toISODate = (d) => {
   return `${y}-${m}-${day}`;
 };
 
+// Average an array of nullable numbers
+const avg = (arr) => {
+  const valid = arr.filter(v => v != null);
+  return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
+};
+
+/**
+ * Format a dayTime string for chart X axis labels based on resolution.
+ *
+ * raw / hourly  → "MM/DD HH:mm"
+ * six_hour      → "MM/DD HH:mm"
+ * daily         → "MM/DD/YYYY"
+ * monthly       → "Mon YYYY"  (client-side monthly view toggle)
+ */
+function formatLabel(isoString, resolution) {
+  const d = new Date(isoString);
+  if (isNaN(d)) return isoString;
+
+  if (resolution === "daily") {
+    return d.toLocaleString("en-PH", {
+      month: "2-digit", day: "2-digit", year: "numeric",
+    });
+  }
+
+  if (resolution === "monthly") {
+    return d.toLocaleString("en-PH", { month: "short", year: "numeric" });
+  }
+
+  // raw, hourly, six_hour — show date + time
+  return d.toLocaleString("en-PH", {
+    month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3: CHART.JS LOADER
+// SECTION 3: LOADING OVERLAY
+// ─────────────────────────────────────────────────────────────────────────────
+
+const SPINNER_STYLE = `@keyframes spinLoader { to { transform: rotate(360deg); } }`;
+
+function LoadingOverlay() {
+  return (
+    <>
+      <style>{SPINNER_STYLE}</style>
+      <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <div style={{ background: "#fff", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid #e9ecef", borderTop: "4px solid #435ebe", animation: "spinLoader 0.8s linear infinite" }} />
+          <div style={{ textAlign: "center" }}>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "#212529", margin: 0 }}>Fetching sensor data</p>
+            <p style={{ fontSize: 12, color: "#6c757d", marginTop: 6 }}>Please wait while live readings are loaded…</p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 4: CHART.JS LOADER
 // ─────────────────────────────────────────────────────────────────────────────
 
 function useChartJS() {
@@ -147,16 +209,11 @@ function useChartJS() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4: STAT CARDS — isolated component so its poll never touches charts
+// SECTION 5: STAT CARDS
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Completely isolated from the chart section.
- * Its setSummary state updates ONLY re-render this component,
- * so the chart is never destroyed/rebuilt due to polling.
- */
-const StatCards = memo(function StatCards() {
-  const [summary, setSummary] = useState({
+const StatCards = memo(function StatCards({ onFirstLoad }) {
+  const [summary, setSummary] = useState(summaryCache ?? {
     avgTemperature:    null,
     avgHumidity:       null,
     activeSensorCount: null,
@@ -164,16 +221,27 @@ const StatCards = memo(function StatCards() {
   });
 
   useEffect(() => {
+    let isFirst = !summaryCache;
+
     const fetchSummary = async () => {
       try {
         const res = await axios.get(`${API_BASE}/dashboard/summary`);
+        summaryCache = res.data.data;
         setSummary(res.data.data);
       } catch (err) {
         console.error("Failed to fetch dashboard summary:", err);
+      } finally {
+        if (isFirst) {
+          isFirst = false;
+          onFirstLoad?.();
+        }
       }
     };
+
+    if (summaryCache) onFirstLoad?.();
+
     fetchSummary();
-    const interval = setInterval(fetchSummary, 10_000);
+    const interval = setInterval(fetchSummary, 30_000);
     return () => clearInterval(interval);
   }, []);
 
@@ -193,8 +261,7 @@ const StatCards = memo(function StatCards() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5: CHART COMPONENT
-// Wrapped in memo so it only re-renders when datasets/labels actually change.
+// SECTION 6: CHART COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SensorLineChart = memo(function SensorLineChart({
@@ -289,7 +356,7 @@ const SensorLineChart = memo(function SensorLineChart({
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 6: OPTION CONVERTERS
+// SECTION 7: OPTION CONVERTERS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const toLocationOptions = (locations) =>
@@ -300,12 +367,96 @@ const toSensorOptions = (sensors) =>
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 7: MAIN PAGE
-// Only chart state lives here — no summary state, no polling.
+// SECTION 8: VIEW BUILDERS
+// resolution is now passed in so labels format correctly per tier.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Build chart datasets from raw API data.
+ * resolution controls how X axis timestamps are formatted.
+ */
+function buildDailyDatasets(rawData, resolution = "raw") {
+  const { sortedTimes, perSensor } = rawData;
+
+  const labels = sortedTimes.map(t => formatLabel(t, resolution));
+
+  const base = ({ color, label }) => ({
+    label, borderColor: color, backgroundColor: color + "22",
+    borderWidth: 2, pointRadius: resolution === "raw" ? 0 : 2,
+    tension: 0.3, fill: false, spanGaps: true,
+  });
+
+  const tempDS  = perSensor.map(s => ({ ...base(s), data: sortedTimes.map(t => s.readingMap[t]?.temperature ?? null) }));
+  const humidDS = perSensor.map(s => ({ ...base(s), data: sortedTimes.map(t => s.readingMap[t]?.humidity    ?? null) }));
+
+  return { labels, tempDS, humidDS };
+}
+
+function buildMonthlyDatasets(rawData) {
+  const { sortedTimes, perSensor } = rawData;
+
+  const months = [...new Set(sortedTimes.map(t => t.slice(0, 7)))].sort();
+
+  const labels = months.map(m => {
+    const [y, mo] = m.split("-");
+    return new Date(Number(y), Number(mo) - 1, 1)
+      .toLocaleString("en-PH", { month: "short", year: "numeric" });
+  });
+
+  const base = ({ color, label }) => ({
+    label, borderColor: color, backgroundColor: color + "22",
+    borderWidth: 2, pointRadius: 4, tension: 0.3, fill: false, spanGaps: true,
+  });
+
+  const avgForMonth = (readingMap, month, field) =>
+    avg(sortedTimes.filter(t => t.startsWith(month)).map(t => readingMap[t]?.[field] ?? null));
+
+  const tempDS  = perSensor.map(s => ({ ...base(s), data: months.map(m => avgForMonth(s.readingMap, m, "temperature")) }));
+  const humidDS = perSensor.map(s => ({ ...base(s), data: months.map(m => avgForMonth(s.readingMap, m, "humidity"))    }));
+
+  return { labels, tempDS, humidDS };
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 9: RESOLUTION BADGE
+// Small pill shown below filters so the user knows what granularity they're seeing.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const RESOLUTION_META = {
+  /*
+  raw:       { label: "Raw (~5s)",       color: "#435ebe" },
+  hourly:    { label: "Hourly avg",      color: "#198754" },
+  six_hour:  { label: "6-hour avg",      color: "#fd7e14" },
+  daily:     { label: "Daily avg",       color: "#6f42c1" },
+  monthly:   { label: "Monthly avg",     color: "#0dcaf0" },
+  */
+};
+
+function ResolutionBadge({ resolution }) {
+  const meta = RESOLUTION_META[resolution];
+  if (!meta) return null;
+  return (
+    <span style={{
+      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5,
+      background: meta.color + "18", color: meta.color,
+      border: `1px solid ${meta.color}40`,
+      letterSpacing: ".04em", textTransform: "uppercase",
+    }}>
+      {meta.label}
+    </span>
+  );
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 10: MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
   const chartReady = useChartJS();
+
+  const [summaryLoading, setSummaryLoading] = useState(!summaryCache);
 
   // ── Filter state ────────────────────────────────────────────────────────────
   const [selLocationValues, setSelLocationValues] = useState([]);
@@ -322,6 +473,13 @@ export default function Dashboard() {
   const [loading,       setLoading]       = useState(false);
   const [apiError,      setApiError]      = useState(null);
   const [noData,        setNoData]        = useState(false);
+
+  // resolution returned by the backend — drives label formatting + badge
+  const [resolution, setResolution] = useState("raw");
+
+  // ── View toggle — "daily" | "monthly" ──────────────────────────────────────
+  const [chartView,  setChartView]  = useState("daily");
+  const rawDataRef                  = useRef(null);
 
   // ── Derived selections ──────────────────────────────────────────────────────
   const selSensors   = ALL_SENSORS.filter((s) => selSensorValues.includes(s.id));
@@ -376,6 +534,19 @@ export default function Dashboard() {
     setNoData(false);
   };
 
+  // ── Toggle handler — purely client-side, no fetch ──────────────────────────
+  const handleViewToggle = (view) => {
+    if (view === chartView || !rawDataRef.current) return;
+    const { labels: l, tempDS: t, humidDS: h } = view === "monthly"
+      ? buildMonthlyDatasets(rawDataRef.current)
+      : buildDailyDatasets(rawDataRef.current, resolution);
+    setLabels(l);
+    setTempDS(t);
+    setHumidDS(h);
+    setChartView(view);
+    setChartKey(k => k + 1);
+  };
+
   // ── Apply — fetch batch history from backend ────────────────────────────────
   const handleApply = async () => {
     if (!canApply) return;
@@ -401,16 +572,16 @@ export default function Dashboard() {
         },
       });
 
-      const batchData = res.data.data; // { [areaId]: { lineName, limits, readings: [...] } }
+      const batchData  = res.data.data;
+      const serverRes  = res.data.meta?.resolution ?? "raw"; // ← resolution from backend
 
-      // Build a flat time label set across all sensors (union of all Day_Time values)
+      // Build union of all timestamps across all sensors
       const allTimes = new Set();
       Object.values(batchData).forEach(({ readings }) => {
         readings.forEach(r => allTimes.add(r.dayTime));
       });
       const sortedTimes = [...allTimes].sort();
 
-      // If no readings at all across all selected sensors, show no-data state
       if (sortedTimes.length === 0) {
         setNoData(true);
         setApplied(true);
@@ -418,46 +589,21 @@ export default function Dashboard() {
         return;
       }
 
-      // Format labels for display
-      const newLabels = sortedTimes.map(t =>
-        new Date(t).toLocaleString("en-PH", {
-          month: "2-digit", day: "2-digit",
-          hour: "2-digit", minute: "2-digit", hour12: false,
-        })
-      );
-
-      // Build per-sensor time → value lookup for aligned datasets
-      const newTempDS  = [];
-      const newHumidDS = [];
-
+      // Build per-sensor reading maps
+      const perSensor = [];
       sensorsToFetch.forEach((sensor, i) => {
         const entry = batchData[sensor.id];
         if (!entry) return;
-
-        // Build lookup: dayTime → reading
         const readingMap = {};
         entry.readings.forEach(r => { readingMap[r.dayTime] = r; });
-
-        const tempData  = sortedTimes.map(t => readingMap[t]?.temperature ?? null);
-        const humidData = sortedTimes.map(t => readingMap[t]?.humidity    ?? null);
-
-        const color = CHART_COLORS[i % CHART_COLORS.length];
-        const base  = {
+        perSensor.push({
+          readingMap,
+          color: CHART_COLORS[i % CHART_COLORS.length],
           label: entry.lineName || sensor.name,
-          borderColor: color, backgroundColor: color + "22",
-          borderWidth: 2, pointRadius: 2, tension: 0.3, fill: false,
-          spanGaps: true, // connect across null gaps
-        };
-
-        newTempDS.push({ ...base, data: tempData });
-        newHumidDS.push({ ...base, data: humidData });
+        });
       });
 
-      // Derive limit profiles from actual DB values in the batch response.
-      // Group by location — use max UL and min LL across all sensors per location
-      // so the reference lines reflect real DB limits, not hardcoded values.
-      // This means when sensor limits are changed via the map page modal,
-      // the chart reference lines will reflect the updated values on next Apply.
+      // Derive limit profiles grouped by location
       const locationLimitMap = {};
       sensorsToFetch.forEach((sensor) => {
         const entry = batchData[sensor.id];
@@ -466,21 +612,24 @@ export default function Dashboard() {
         if (!locationLimitMap[loc]) {
           locationLimitMap[loc] = { ...entry.limits, location: loc };
         } else {
-          // Take the widest range — max UL, min LL
           locationLimitMap[loc].tempUL  = Math.max(locationLimitMap[loc].tempUL,  entry.limits.tempUL);
           locationLimitMap[loc].tempLL  = Math.min(locationLimitMap[loc].tempLL,  entry.limits.tempLL);
           locationLimitMap[loc].humidUL = Math.max(locationLimitMap[loc].humidUL, entry.limits.humidUL);
           locationLimitMap[loc].humidLL = Math.min(locationLimitMap[loc].humidLL, entry.limits.humidLL);
         }
       });
-      const newLimitProfiles = Object.values(locationLimitMap);
 
-      // Set all chart state at once, then bump chartKey once to rebuild charts
-      setLabels(newLabels);
-      setTempDS(newTempDS);
-      setHumidDS(newHumidDS);
-      setLimitProfiles(newLimitProfiles);
-      setChartKey((k) => k + 1);
+      rawDataRef.current = { sortedTimes, perSensor };
+
+      // Always start in daily view after a fresh Apply — use server resolution for labels
+      const { labels: l, tempDS: t, humidDS: h } = buildDailyDatasets(rawDataRef.current, serverRes);
+      setResolution(serverRes);
+      setLimitProfiles(Object.values(locationLimitMap));
+      setLabels(l);
+      setTempDS(t);
+      setHumidDS(h);
+      setChartView("daily");
+      setChartKey(k => k + 1);
       setApplied(true);
 
     } catch (err) {
@@ -504,6 +653,9 @@ export default function Dashboard() {
     setApplied(false);
     setApiError(null);
     setNoData(false);
+    setChartView("daily");
+    setResolution("raw");
+    rawDataRef.current = null;
   };
 
   const hintText = (() => {
@@ -516,26 +668,27 @@ export default function Dashboard() {
     return "Location narrows sensor options · Sensor narrows location options";
   })();
 
+  // Subtitle shown below each chart title — includes resolution context
+  const chartSubtitle = (metric) => {
+    const resLabel = RESOLUTION_META[chartView === "monthly" ? "monthly" : resolution]?.label ?? resolution;
+    return `${metric} · ${resLabel} · Scroll to zoom · Click & drag to pan`;
+  };
+
   // ─────────────────────────────────────────────────────────────────────────
   // RENDER
   // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 p-6">
 
-      {/* Page header */}
+      {summaryLoading && <LoadingOverlay />}
+
       <div>
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="mt-1 text-muted-foreground">Temperature and Humidity Monitoring System</p>
       </div>
 
-      {/*
-        StatCards is a fully isolated memo component.
-        Its internal setSummary state updates NEVER propagate here,
-        so the chart section below is never re-rendered by polling.
-      */}
-      <StatCards />
+      <StatCards onFirstLoad={() => setSummaryLoading(false)} />
 
-      {/* Filter + Charts card */}
       <Card style={{ border: "1px solid #e9ecef" }}>
         <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
           <div>
@@ -585,9 +738,37 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Limit line legend */}
+          {/* Legend row + Daily/Monthly toggle */}
           <div className="flex items-center gap-4 pt-3 pb-1">
             <p className="text-xs text-muted-foreground flex-1">{hintText}</p>
+
+            {/* Resolution badge — visible once data is applied */}
+            {applied && !noData && !apiError && (
+              <ResolutionBadge resolution={chartView === "monthly" ? "monthly" : resolution} />
+            )}
+
+            {/* View toggle */}
+            {applied && !noData && !apiError && (
+              <div style={{ display: "flex", alignItems: "center", gap: 2,border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>
+                {["daily", "monthly"].map((v) => (
+                  <button
+                    key={v}
+                    onClick={() => handleViewToggle(v)}
+                    style={{
+                      padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                      fontSize: 12, fontWeight: chartView === v ? 600 : 400,
+                      background: chartView === v ? "#fff" : "transparent",
+
+                      boxShadow: chartView === v ? "0 1px 3px rgba(0,0,0,.10)" : "none",
+                      transition: "all .15s",
+                    }}
+                  >
+                    {v === "daily" ? "Daily" : "Monthly"}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="flex items-center gap-3 shrink-0">
               <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <svg width="24" height="10"><line x1="0" y1="5" x2="24" y2="5" stroke="#c0392b" strokeWidth="1.5" strokeDasharray="6,4" /></svg>
@@ -632,16 +813,18 @@ export default function Dashboard() {
               <div className="flex flex-col gap-8">
                 <SensorLineChart
                   key={`temp-${chartKey}`}
-                  id="tempChart" title="Temperature"
-                  subtitle="Temperature (°C) · Scroll to zoom · Click & drag to pan"
+                  id="tempChart"
+                  title="Temperature"
+                  subtitle={chartSubtitle("Temperature (°C)")}
                   datasets={tempDS} labels={labels} yLabel="Temperature (°C)"
                   limitProfiles={limitProfiles} limitKeyUL="tempUL" limitKeyLL="tempLL"
                 />
                 <div className="border-t" />
                 <SensorLineChart
                   key={`humid-${chartKey}`}
-                  id="humidChart" title="Humidity"
-                  subtitle="Humidity (%) · Scroll to zoom · Click & drag to pan"
+                  id="humidChart"
+                  title="Humidity"
+                  subtitle={chartSubtitle("Humidity (%)")}
                   datasets={humidDS} labels={labels} yLabel="Humidity (%)"
                   limitProfiles={limitProfiles} limitKeyUL="humidUL" limitKeyLL="humidLL"
                 />
