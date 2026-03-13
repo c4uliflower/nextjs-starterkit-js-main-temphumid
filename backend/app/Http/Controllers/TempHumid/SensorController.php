@@ -20,7 +20,7 @@ class SensorController extends Controller
         'p1f1'  => ['plant' => '1',     'floor' => '1'],
         'p1f2'  => ['plant' => '1',     'floor' => '2'],
         'p2f1'  => ['plant' => '2',     'floor' => '1'],
-        'p2f2'  => ['plant' => '2',     'floor' => '2'],
+        'p2f2' => ['plant' => '2', 'floor' => '2', 'extra_area_ids' => ['P1F1-16']],
         'p12f2' => ['plant' => '1 & 2', 'floor' => '2'],
         'wh' => ['plant' => '2', 'floor' => '1', 'location_like' => 'P2F1WH'],
     ];
@@ -43,11 +43,18 @@ class SensorController extends Controller
                 $slug = strtolower($request->query('floor'));
                 $map  = self::FLOOR_MAP[$slug] ?? null;
 
-                if ($map) {
-                    $query->where('Plant', $map['plant'])
+               if ($map) {
+                    $query->where(function ($q) use ($map) {
+                        $q->where('Plant', $map['plant'])
                         ->where('Floor', $map['floor']);
-                    if (isset($map['location_like'])) {
-                        $query->where('Location', 'like', '%' . $map['location_like'] . '%');
+                        if (isset($map['location_like'])) {
+                            $q->where('Location', 'like', '%' . $map['location_like'] . '%');
+                        }
+                    });
+                    if (!empty($map['extra_area_ids'])) {
+                        $query->orWhere(function ($q) use ($map) {
+                            $q->whereIn('Area ID', $map['extra_area_ids']);
+                        });
                     }
                 }
             }
@@ -85,10 +92,17 @@ class SensorController extends Controller
                 $map  = self::FLOOR_MAP[$slug] ?? null;
 
                 if ($map) {
-                    $query->where('Plant', $map['plant'])
+                    $query->where(function ($q) use ($map) {
+                        $q->where('Plant', $map['plant'])
                         ->where('Floor', $map['floor']);
-                    if (isset($map['location_like'])) {
-                        $query->where('Location', 'like', '%' . $map['location_like'] . '%');
+                        if (isset($map['location_like'])) {
+                            $q->where('Location', 'like', '%' . $map['location_like'] . '%');
+                        }
+                    });
+                    if (!empty($map['extra_area_ids'])) {
+                        $query->orWhere(function ($q) use ($map) {
+                            $q->whereIn('Area ID', $map['extra_area_ids']);
+                        });
                     }
                 }
             }

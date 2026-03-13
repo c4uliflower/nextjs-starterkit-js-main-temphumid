@@ -15,29 +15,31 @@ class SensorLimitController extends Controller
 {
     /**
      * GET /api/temphumid/sensors/{areaId}/limits
-     * Returns the current limits for a single sensor.
-     * Used by: Adjust Sensor Limits modal on open (seeds draft state).
+     * Returns the LATEST limits for a single sensor from TempHumid_Limits_Log.
+     * Used by: Adjust Sensor Limits modal on open.
      */
     public function show(string $areaId): JsonResponse
     {
         try {
-            $sensor = DB::connection('temphumid')
-                ->table('Temp_Logger_Chip_ID')
+            $log = DB::connection('temphumid')
+                ->table('TempHumid_Limits_Log')
                 ->where('Area ID', $areaId)
+                ->orderByDesc('changed_at')
+                ->orderByDesc('ID')
                 ->first();
 
-            if (! $sensor) {
+            if (! $log) {
                 return response()->json(['message' => 'Sensor not found.'], 404);
             }
 
             return response()->json([
                 'data' => [
-                    'areaId'  => $sensor->{'Area ID'},
-                    'lineName' => $sensor->{'Line Name'},
-                    'tempUL'  => $sensor->Temp_Upper_Limit,
-                    'tempLL'  => $sensor->Temp_Lower_Limit,
-                    'humidUL' => $sensor->Humid_Upper_Limit,
-                    'humidLL' => $sensor->Humid_Lower_Limit,
+                    'areaId'   => $log->{'Area ID'},
+                    'lineName' => $log->{'Line Name'},
+                    'tempUL'   => $log->Temp_Upper_Limit,
+                    'tempLL'   => $log->Temp_Lower_Limit,
+                    'humidUL'  => $log->Humid_Upper_Limit,
+                    'humidLL'  => $log->Humid_Lower_Limit,
                 ],
             ], 200);
 
@@ -52,11 +54,11 @@ class SensorLimitController extends Controller
 
     /**
      * POST /api/temphumid/sensors/{areaId}/limits
-     * Updates limits for a single sensor in Temp_Logger_Chip_ID.
-     * Used by: Adjust Sensor Limits modal save button (per-sensor save).
+     * Inserts a new row into TempHumid_Limits_Log for a single sensor.
+     * Trigger updates Temp_Logger_Chip_ID automatically.
+     * Skips insert if nothing actually changed.
      *
      * Body: { tempUL, tempLL, humidUL, humidLL }
-     * Validation: LL must be strictly less than UL for both temp and humid.
      */
     public function update(Request $request, string $areaId): JsonResponse
     {
@@ -67,7 +69,6 @@ class SensorLimitController extends Controller
             'humidLL' => ['required', 'numeric'],
         ]);
 
-        // Business rule: lower limit must be strictly less than upper limit
         if ((float) $validated['tempLL'] >= (float) $validated['tempUL']) {
             return response()->json([
                 'message' => 'Temperature lower limit must be less than upper limit.',
@@ -83,20 +84,66 @@ class SensorLimitController extends Controller
         }
 
         try {
-            $affected = DB::connection('temphumid')
+            // Get sensor metadata from Temp_Logger_Chip_ID
+            $sensor = DB::connection('temphumid')
                 ->table('Temp_Logger_Chip_ID')
                 ->where('Area ID', $areaId)
-                ->update([
+                ->first();
+
+            if (! $sensor) {
+                return response()->json(['message' => 'Sensor not found.'], 404);
+            }
+
+            // Get current limits from latest Limits_Log row
+            $current = DB::connection('temphumid')
+                ->table('TempHumid_Limits_Log')
+                ->where('Area ID', $areaId)
+                ->orderByDesc('changed_at')
+                ->orderByDesc('ID')
+                ->first();
+
+            // Diff against current log values
+            $changedFields = [];
+            if ($current) {
+                if ((float) $validated['tempUL']  !== (float) $current->Temp_Upper_Limit)  $changedFields[] = 'Temp UL';
+                if ((float) $validated['tempLL']  !== (float) $current->Temp_Lower_Limit)  $changedFields[] = 'Temp LL';
+                if ((float) $validated['humidUL'] !== (float) $current->Humid_Upper_Limit) $changedFields[] = 'Humid UL';
+                if ((float) $validated['humidLL'] !== (float) $current->Humid_Lower_Limit) $changedFields[] = 'Humid LL';
+            } else {
+                $changedFields = ['Temp UL', 'Temp LL', 'Humid UL', 'Humid LL'];
+            }
+
+            if (empty($changedFields)) {
+                return response()->json([
+                    'message' => 'No changes detected.',
+                    'data'    => [
+                        'areaId'  => $areaId,
+                        'tempUL'  => $validated['tempUL'],
+                        'tempLL'  => $validated['tempLL'],
+                        'humidUL' => $validated['humidUL'],
+                        'humidLL' => $validated['humidLL'],
+                    ],
+                ], 200);
+            }
+
+            $user      = $request->user();
+            $changedBy = $user
+                ? trim($user->first_name . ' ' . $user->last_name) . ' (' . $user->employee_no . ')'
+                : 'unknown';
+
+            DB::connection('temphumid')
+                ->table('TempHumid_Limits_Log')
+                ->insert([
+                    'Area ID'           => $areaId,
+                    'Chip ID'           => $sensor->{'Chip ID'},
+                    'Line Name'         => $sensor->{'Line Name'},
                     'Temp_Upper_Limit'  => $validated['tempUL'],
                     'Temp_Lower_Limit'  => $validated['tempLL'],
                     'Humid_Upper_Limit' => $validated['humidUL'],
                     'Humid_Lower_Limit' => $validated['humidLL'],
-                    'Date Modified'     => now(),
+                    'changed_by'        => $changedBy,
+                    'changed_at'        => now(),
                 ]);
-
-            if ($affected === 0) {
-                return response()->json(['message' => 'Sensor not found.'], 404);
-            }
 
             return response()->json([
                 'message' => 'Limits updated successfully.',
@@ -120,24 +167,31 @@ class SensorLimitController extends Controller
 
     /**
      * POST /api/temphumid/sensors/limits/batch
-     * Updates limits for multiple sensors at once.
-     * Used by: Adjust Sensor Limits modal "Apply to all" + bulk save.
+     * Inserts new rows into TempHumid_Limits_Log for multiple sensors.
+     * Trigger updates Temp_Logger_Chip_ID automatically.
+     * Skips insert for sensors where nothing actually changed.
      *
      * Body: { sensors: [{ areaId, tempUL, tempLL, humidUL, humidLL }] }
      */
     public function batchUpdate(Request $request): JsonResponse
     {
         $request->validate([
-            'sensors'            => ['required', 'array', 'min:1'],
-            'sensors.*.areaId'   => ['required', 'string'],
-            'sensors.*.tempUL'   => ['required', 'numeric'],
-            'sensors.*.tempLL'   => ['required', 'numeric'],
-            'sensors.*.humidUL'  => ['required', 'numeric'],
-            'sensors.*.humidLL'  => ['required', 'numeric'],
+            'sensors'           => ['required', 'array', 'min:1'],
+            'sensors.*.areaId'  => ['required', 'string'],
+            'sensors.*.tempUL'  => ['required', 'numeric'],
+            'sensors.*.tempLL'  => ['required', 'numeric'],
+            'sensors.*.humidUL' => ['required', 'numeric'],
+            'sensors.*.humidLL' => ['required', 'numeric'],
         ]);
+
+        $user      = $request->user();
+        $changedBy = $user
+            ? trim($user->first_name . ' ' . $user->last_name) . ' (' . $user->employee_no . ')'
+            : 'unknown';
 
         $errors  = [];
         $updated = [];
+        $skipped = [];
 
         foreach ($request->sensors as $item) {
             if ((float) $item['tempLL'] >= (float) $item['tempUL']) {
@@ -151,15 +205,53 @@ class SensorLimitController extends Controller
             }
 
             try {
-                DB::connection('temphumid')
+                // Get sensor metadata
+                $sensor = DB::connection('temphumid')
                     ->table('Temp_Logger_Chip_ID')
                     ->where('Area ID', $item['areaId'])
-                    ->update([
+                    ->first();
+
+                if (! $sensor) {
+                    $errors[] = "{$item['areaId']}: Sensor not found.";
+                    continue;
+                }
+
+                // Get current limits from latest Limits_Log row
+                $current = DB::connection('temphumid')
+                    ->table('TempHumid_Limits_Log')
+                    ->where('Area ID', $item['areaId'])
+                    ->orderByDesc('changed_at')
+                    ->orderByDesc('ID')
+                    ->first();
+
+                // Diff against current log values
+                $changedFields = [];
+                if ($current) {
+                    if ((float) $item['tempUL']  !== (float) $current->Temp_Upper_Limit)  $changedFields[] = 'Temp UL';
+                    if ((float) $item['tempLL']  !== (float) $current->Temp_Lower_Limit)  $changedFields[] = 'Temp LL';
+                    if ((float) $item['humidUL'] !== (float) $current->Humid_Upper_Limit) $changedFields[] = 'Humid UL';
+                    if ((float) $item['humidLL'] !== (float) $current->Humid_Lower_Limit) $changedFields[] = 'Humid LL';
+                } else {
+                    $changedFields = ['Temp UL', 'Temp LL', 'Humid UL', 'Humid LL'];
+                }
+
+                if (empty($changedFields)) {
+                    $skipped[] = $item['areaId'];
+                    continue;
+                }
+
+                DB::connection('temphumid')
+                    ->table('TempHumid_Limits_Log')
+                    ->insert([
+                        'Area ID'           => $item['areaId'],
+                        'Chip ID'           => $sensor->{'Chip ID'},
+                        'Line Name'         => $sensor->{'Line Name'},
                         'Temp_Upper_Limit'  => $item['tempUL'],
                         'Temp_Lower_Limit'  => $item['tempLL'],
                         'Humid_Upper_Limit' => $item['humidUL'],
                         'Humid_Lower_Limit' => $item['humidLL'],
-                        'Date Modified'     => now(),
+                        'changed_by'        => $changedBy,
+                        'changed_at'        => now(),
                     ]);
 
                 $updated[] = $item['areaId'];
@@ -180,6 +272,7 @@ class SensorLimitController extends Controller
         return response()->json([
             'message' => empty($errors) ? 'All limits updated.' : 'Some updates failed.',
             'updated' => $updated,
+            'skipped' => $skipped,
             'errors'  => $errors,
         ], 200);
     }

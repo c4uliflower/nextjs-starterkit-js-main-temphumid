@@ -6,7 +6,7 @@ server:
   command: 'php vendor/bin/rr-worker start'
 
 http:
-  address: 0.0.0.0:8080
+  address: 0.0.0.0:8000
   middleware: [ "static", "headers", "gzip" ]
   pool:
     debug: true #recommended during development
