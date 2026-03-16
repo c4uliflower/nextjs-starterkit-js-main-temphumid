@@ -73,7 +73,8 @@ class SensorController extends Controller
     /**
      * GET /api/temphumid/sensors/readings/current
      * Latest reading per sensor from TempHumid_Calib_Log (already corrected).
-     * Breach detection applied server-side against limits in Temp_Logger_Chip_ID.
+     * Breach detection applied server-side against limits fetched from
+     * TempHumid_Limits_Log (latest row per areaId).
      * Optionally filtered by floor slug.
      * Used by: monitoring page (all floors), each map page (polling every 30s).
      *
@@ -108,10 +109,15 @@ class SensorController extends Controller
             }
 
             $sensors = $query->get();
-            $results = [];
 
+            // Fetch latest limits for all sensors in one query, keyed by areaId.
+            // Uses a subquery to get the single most-recent row per Area ID.
+            $areaIds      = $sensors->pluck('Area ID')->all();
+            $latestLimits = $this->fetchLatestLimits($areaIds);
+
+            $results = [];
             foreach ($sensors as $sensor) {
-                $results[] = $this->buildCurrentReading($sensor);
+                $results[] = $this->buildCurrentReading($sensor, $latestLimits);
             }
 
             return response()->json(['data' => $results], 200);
@@ -135,12 +141,16 @@ class SensorController extends Controller
                 ->where('Status', 'Active')
                 ->get();
 
+            // Fetch latest limits for all sensors in one query
+            $areaIds      = $sensors->pluck('Area ID')->all();
+            $latestLimits = $this->fetchLatestLimits($areaIds);
+
             $temps       = [];
             $humids      = [];
             $breachCount = 0;
 
             foreach ($sensors as $sensor) {
-                $reading = $this->buildCurrentReading($sensor);
+                $reading = $this->buildCurrentReading($sensor, $latestLimits);
 
                 if ($reading['hasData']) {
                     $temps[]  = $reading['temperature'];
@@ -176,7 +186,57 @@ class SensorController extends Controller
     // -------------------------------------------------------------------------
 
     /**
+     * Fetch the latest limits row from TempHumid_Limits_Log for each areaId,
+     * returned as an associative array keyed by areaId.
+     *
+     * Uses a subquery to get only the single most-recent row per Area ID,
+     * so this is always one round-trip regardless of sensor count.
+     *
+     * Falls back gracefully — if a sensor has no log entry, it won't appear
+     * in the returned array, and buildCurrentReading() falls back to
+     * Temp_Logger_Chip_ID values.
+     *
+     * @param  string[]  $areaIds
+     * @return array<string, object>   areaId → limits row
+     */
+    private function fetchLatestLimits(array $areaIds): array
+    {
+        if (empty($areaIds)) {
+            return [];
+        }
+
+        // Subquery: rank rows per Area ID by changed_at DESC, ID DESC
+        $rows = DB::connection('temphumid')
+            ->table('TempHumid_Limits_Log as ll')
+            ->whereIn('ll.Area ID', $areaIds)
+            ->where(function ($q) {
+                // Only keep the row where no newer row exists for the same Area ID
+                $q->whereNotExists(function ($sub) {
+                    $sub->from('TempHumid_Limits_Log as ll2')
+                        ->whereColumn('ll2.Area ID', 'll.Area ID')
+                        ->where(function ($inner) {
+                            $inner->where('ll2.changed_at', '>', DB::raw('ll.changed_at'))
+                                  ->orWhere(function ($tie) {
+                                      $tie->where('ll2.changed_at', '=', DB::raw('ll.changed_at'))
+                                          ->where('ll2.ID', '>', DB::raw('ll.ID'));
+                                  });
+                        });
+                });
+            })
+            ->get(['Area ID', 'Temp_Upper_Limit', 'Temp_Lower_Limit', 'Humid_Upper_Limit', 'Humid_Lower_Limit']);
+
+        $map = [];
+        foreach ($rows as $row) {
+            $map[$row->{'Area ID'}] = $row;
+        }
+
+        return $map;
+    }
+
+    /**
      * Format a raw Temp_Logger_Chip_ID row into the standard sensor shape.
+     * Limits here still come from Temp_Logger_Chip_ID — this is used by
+     * the index() sensor registry endpoint only.
      */
     private function formatSensor(object $sensor): array
     {
@@ -204,15 +264,21 @@ class SensorController extends Controller
     /**
      * Fetch the latest reading for a sensor from TempHumid_Calib_Log.
      * Values are already corrected — no offset math needed.
-     * Breach detection applied here against limits in Temp_Logger_Chip_ID.
+     *
+     * Limits and breach detection use the pre-fetched $latestLimits map
+     * (from TempHumid_Limits_Log). Falls back to Temp_Logger_Chip_ID
+     * values if no log entry exists for this sensor yet.
      *
      * NOTE: activeLocation / inactive-breach is NOT derived here —
      *       that stays frontend-only via the INACTIVE_AREAS set.
+     *
+     * @param  object                $sensor       Row from Temp_Logger_Chip_ID
+     * @param  array<string, object> $latestLimits Keyed by areaId
      */
-    private function buildCurrentReading(object $sensor): array
+    private function buildCurrentReading(object $sensor, array $latestLimits): array
     {
-        //$chipId = '0x' . strtoupper(substr($sensor->{'Chip ID'}, 2));
         $chipId  = $sensor->{'Chip ID'};
+        $areaId  = $sensor->{'Area ID'};
         $reading = null;
 
         try {
@@ -230,18 +296,25 @@ class SensorController extends Controller
             ]);
         }
 
+        // Resolve limits: prefer Limits_Log, fall back to Temp_Logger_Chip_ID
+        $limRow  = $latestLimits[$areaId] ?? null;
+        $tempUL  = $limRow ? $limRow->Temp_Upper_Limit  : $sensor->Temp_Upper_Limit;
+        $tempLL  = $limRow ? $limRow->Temp_Lower_Limit  : $sensor->Temp_Lower_Limit;
+        $humidUL = $limRow ? $limRow->Humid_Upper_Limit : $sensor->Humid_Upper_Limit;
+        $humidLL = $limRow ? $limRow->Humid_Lower_Limit : $sensor->Humid_Lower_Limit;
+
         $base = [
-            'areaId'   => $sensor->{'Area ID'},
+            'areaId'   => $areaId,
             'chipId'   => $chipId,
             'lineName' => $sensor->{'Line Name'},
             'plant'    => $sensor->Plant,
             'floor'    => $sensor->Floor,
             'location' => $sensor->Location,
             'limits'   => [
-                'tempUL'  => $sensor->Temp_Upper_Limit,
-                'tempLL'  => $sensor->Temp_Lower_Limit,
-                'humidUL' => $sensor->Humid_Upper_Limit,
-                'humidLL' => $sensor->Humid_Lower_Limit,
+                'tempUL'  => $tempUL,
+                'tempLL'  => $tempLL,
+                'humidUL' => $humidUL,
+                'humidLL' => $humidLL,
             ],
         ];
 
@@ -260,10 +333,10 @@ class SensorController extends Controller
         $humid = (float) $reading->Humidity;
 
         $breached =
-            $temp  > (float) $sensor->Temp_Upper_Limit  ||
-            $temp  < (float) $sensor->Temp_Lower_Limit  ||
-            $humid > (float) $sensor->Humid_Upper_Limit ||
-            $humid < (float) $sensor->Humid_Lower_Limit;
+            $temp  > (float) $tempUL ||
+            $temp  < (float) $tempLL ||
+            $humid > (float) $humidUL ||
+            $humid < (float) $humidLL;
 
         return array_merge($base, [
             'hasData'     => true,
