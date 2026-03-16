@@ -9,6 +9,8 @@ const API_BASE = '/api/temphumid';
 
 // Module-level cache — persists across page navigations
 let mapSensorsCache = null;
+let limitsCache     = {};  // persists fetched limits across modal opens
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 1: DATA LAYER
@@ -34,14 +36,7 @@ const ALL_EDITABLE_SENSORS = [
   ...MAP_SENSORS.map(s => ({ id: s.id, name: s.name, group: "Sensors" })),
 ];
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION 2: UTILITY
-// ─────────────────────────────────────────────────────────────────────────────
-
-function getPaneStatus(sensor) {
-  return sensor.status ?? "no-data";
-}
+function getPaneStatus(sensor) { return sensor.status ?? "no-data"; }
 
 const STATUS_STYLES = {
   "ok":              { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
@@ -89,10 +84,7 @@ function LoadingOverlay() {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 3: SENSOR LIMITS MODAL CONTENT
-// Only sends sensors that actually changed to the backend.
-// originalRef stores values fetched on open — diff computed on save.
 // ─────────────────────────────────────────────────────────────────────────────
-
 const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, saving }) => {
   const err = errors[`${sensorId}.${fieldKey}`];
   return (
@@ -114,40 +106,14 @@ const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, 
 };
 
 function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
-  const [draft,    setDraft]    = useState({});
-  const [loading,  setLoading]  = useState(true);
+  const [draft,    setDraft]    = useState(() => ({ ...limitsCache }));
+  const [loading,  setLoading]  = useState(false);
   const [errors,   setErrors]   = useState({});
   const [activeId, setActiveId] = useState(sensors[0]?.id);
   const [saving,   setSaving]   = useState(false);
   const [apiError, setApiError] = useState(null);
 
-  // Stores the original values fetched on open — never mutated by draft edits
-  const originalRef = useRef({});
-
-  useEffect(() => {
-    const fetchLimits = async () => {
-      setLoading(true);
-      const entries = await Promise.all(
-        sensors.map(async ({ id }) => {
-          const sensor = MAP_SENSORS.find(s => s.id === id);
-          if (!sensor) return [id, allLimits[id] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
-          try {
-            const res = await axios.get(`${API_BASE}/sensors/${sensor.areaId}/limits`);
-            const d   = res.data.data;
-            return [id, { tempUL: d.tempUL, tempLL: d.tempLL, humidUL: d.humidUL, humidLL: d.humidLL }];
-          } catch {
-            return [id, allLimits[id] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
-          }
-        })
-      );
-      const fetched = Object.fromEntries(entries);
-      // Deep copy so originalRef is never affected by subsequent draft edits
-      originalRef.current = JSON.parse(JSON.stringify(fetched));
-      setDraft(fetched);
-      setLoading(false);
-    };
-    fetchLimits();
-  }, []);
+  const originalRef = useRef(JSON.parse(JSON.stringify(limitsCache)));
 
   const setField = (sensorId, key, val) => {
     setDraft(prev => ({ ...prev, [sensorId]: { ...prev[sensorId], [key]: val } }));
@@ -170,7 +136,6 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     return { errors: e, parsed };
   };
 
-  // Returns only ids where at least one field value actually differs from original
   const getChangedIds = (parsed) =>
     Object.keys(parsed).filter(id => {
       const orig = originalRef.current[id];
@@ -181,7 +146,15 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
       );
     });
 
-  // Derived — recomputed from draft on every render to drive button disabled state
+  const isChanged = (id) => {
+    const orig = originalRef.current[id];
+    const curr = draft[id];
+    if (!orig || !curr) return false;
+    return ["tempUL", "tempLL", "humidUL", "humidLL"].some(
+      k => parseFloat(orig[k]) !== parseFloat(curr[k])
+    );
+  };
+
   const changedIds = getChangedIds(
     Object.fromEntries(
       sensors.map(({ id }) => [id, {
@@ -194,35 +167,17 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
   );
   const hasChanges = changedIds.length > 0;
 
-  // Orange dot per sensor list item when value differs from original
-  const isChanged = (id) => {
-    const orig = originalRef.current[id];
-    const curr = draft[id];
-    if (!orig || !curr) return false;
-    return ["tempUL", "tempLL", "humidUL", "humidLL"].some(
-      k => parseFloat(orig[k]) !== parseFloat(curr[k])
-    );
-  };
-
   const handleSaveLimits = async () => {
     const { errors: e, parsed } = validate();
     if (Object.keys(e).length) { setErrors(e); return; }
-
-    // Only send sensors that actually changed — backend skips unchanged ones
     const changed = getChangedIds(parsed);
     if (changed.length === 0) { onClose(); return; }
-
     setSaving(true); setApiError(null);
     try {
-      const payload = {
-        sensors: changed.map(id => {
-          const sensor = MAP_SENSORS.find(s => s.id === id);
-          return { areaId: sensor.areaId, ...parsed[id] };
-        }),
-      };
+      const payload = { sensors: changed.map(id => { const sensor = MAP_SENSORS.find(s => s.id === id); return { areaId: sensor.areaId, ...parsed[id] }; }) };
       await axios.post(`${API_BASE}/sensors/limits/batch`, payload);
-      onSave(parsed);
-      onClose();
+      limitsCache = { ...limitsCache, ...parsed }; // update cache with saved values
+      onSave(parsed); onClose();
     } catch (err) { setApiError(err.message ?? "Something went wrong. Please try again."); }
     finally { setSaving(false); }
   };
@@ -257,13 +212,10 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
                     className={`text-sm ${id === activeId ? "font-semibold" : ""}`}>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      {/* Orange dot = unsaved change; only shown when no validation error */}
                       {!hasRowError(id) && isChanged(id) && (
                         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fd7e14", display: "block" }} title="Unsaved change" />
                       )}
-                      {hasRowError(id) && (
-                        <span className="text-destructive" style={{ fontSize: 16, marginLeft: 4, lineHeight: 1 }}>•</span>
-                      )}
+                      {hasRowError(id) && <span className="text-destructive" style={{ fontSize: 16, marginLeft: 4, lineHeight: 1 }}>•</span>}
                     </div>
                   </div>
                 ))}
@@ -273,21 +225,40 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
         </div>
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24, background: "#fff" }}>
           <p className="text-base font-semibold">{activeSensor?.name}</p>
-          <div><p className="text-sm font-medium mb-3">Temperature</p><div style={{ display: "flex", gap: 16 }}><NumField sensorId={activeId} fieldKey="tempLL"  label="Lower Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} /><NumField sensorId={activeId} fieldKey="tempUL"  label="Upper Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} /></div></div>
-          <div><p className="text-sm font-medium mb-3">Humidity</p><div style={{ display: "flex", gap: 16 }}><NumField sensorId={activeId} fieldKey="humidLL" label="Lower Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} /><NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} /></div></div>
+          <div>
+            <p className="text-sm font-medium mb-3">Temperature</p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <NumField sensorId={activeId} fieldKey="tempLL"  label="Lower Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} />
+              <NumField sensorId={activeId} fieldKey="tempUL"  label="Upper Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} />
+            </div>
+          </div>
+          <div>
+            <p className="text-sm font-medium mb-3">Humidity</p>
+            <div style={{ display: "flex", gap: 16 }}>
+              <NumField sensorId={activeId} fieldKey="humidLL" label="Lower Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} />
+              <NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} />
+            </div>
+          </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
-            {groups.map(group => { const list = sensors.filter(s => s.group === group); if (!list.find(s => s.id === activeId)) return null; return (<Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving || loading} onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>Apply to all {group.toLowerCase()}</Button>); })}
+            {groups.map(group => {
+              const list = sensors.filter(s => s.group === group);
+              if (!list.find(s => s.id === activeId)) return null;
+              return (
+                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={loading || saving}
+                  onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>
+                  Apply to all {group.toLowerCase()}
+                </Button>
+              );
+            })}
           </div>
           {apiError && <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">{apiError}</div>}
         </div>
       </div>
       <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
         {saving             && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
-        {loading && !saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Loading current limits…</span>}
+        {loading && !saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Refreshing limits…</span>}
         <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || loading || !hasChanges}>
-          {saving ? "Saving…" : loading ? "Loading…" : "Save All"}
-        </Button>
+        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || !hasChanges}>{saving ? "Saving…" : "Save All"}</Button>
       </div>
     </div>
   );
@@ -304,8 +275,12 @@ function SensorPane({ sensor }) {
   const isInactiveBreach = status === "inactive-breach" || sensor.activeLocation === false;
   return (
     <div style={{ background: style.bg, border: `2px solid ${style.border}`, borderRadius: 8, padding: "8px 12px", minWidth: 155, color: style.text, boxShadow: "0 4px 12px rgba(0,0,0,.18)", pointerEvents: "none", whiteSpace: "nowrap" }}>
-      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>{sensor.name}{isInactiveBreach && <InactiveAreaBadge />}</div>
-      {sensor.hasData ? (<><div style={{ fontSize: 12 }}>Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong><span style={{ fontSize: 10, color: "#adb5bd", marginLeft: 4 }}>{lim.tempLL}–{lim.tempUL}°C</span></div><div style={{ fontSize: 12 }}>Humid: <strong>{sensor.humid?.toFixed(2)}%</strong><span style={{ fontSize: 10, color: "#adb5bd", marginLeft: 4 }}>{lim.humidLL}–{lim.humidUL}%</span></div></>) : <div style={{ fontSize: 12, opacity: 0.75 }}>No data available</div>}
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>
+        {sensor.name}{isInactiveBreach && <InactiveAreaBadge />}
+      </div>
+      {sensor.hasData
+        ? (<><div style={{ fontSize: 12 }}>Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong><span style={{ fontSize: 10, color: "#adb5bd", marginLeft: 4 }}>{lim.tempLL}–{lim.tempUL}°C</span></div><div style={{ fontSize: 12 }}>Humid: <strong>{sensor.humid?.toFixed(2)}%</strong><span style={{ fontSize: 10, color: "#adb5bd", marginLeft: 4 }}>{lim.humidLL}–{lim.humidUL}%</span></div></>)
+        : <div style={{ fontSize: 12, opacity: 0.75 }}>No data available</div>}
     </div>
   );
 }
@@ -319,11 +294,23 @@ function SensorMarker({ sensor, selected, onToggle }) {
     left:   { ...arrowBase, right:  -13, top:  "50%", transform: "translateY(-50%)", borderLeftColor:   STATUS_STYLES[status].border, borderRight:  "none" },
     right:  { ...arrowBase, left:   -13, top:  "50%", transform: "translateY(-50%)", borderRightColor:  STATUS_STYLES[status].border, borderLeft:   "none" },
   };
-  const panePos = { top: { bottom: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)" }, bottom: { top: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)" }, left: { right: "calc(100% + 10px)", top: "50%", transform: "translateY(-50%)" }, right: { left: "calc(100% + 10px)", top: "50%", transform: "translateY(-50%)" } };
+  const panePos = {
+    top:    { bottom: "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)" },
+    bottom: { top:    "calc(100% + 10px)", left: "50%", transform: "translateX(-50%)" },
+    left:   { right:  "calc(100% + 10px)", top:  "50%", transform: "translateY(-50%)" },
+    right:  { left:   "calc(100% + 10px)", top:  "50%", transform: "translateY(-50%)" },
+  };
   return (
     <div onClick={() => onToggle(sensor.id)} style={{ position: "absolute", left: `${sensor.x}%`, top: `${sensor.y}%`, transform: "translate(-50%, -50%)", zIndex: selected ? 20 : 10, cursor: "pointer" }}>
       <div style={{ width: 16, height: 16, background: sensor.color, border: `2px solid ${isWhite ? "#adb5bd" : "rgba(0,0,0,.35)"}`, borderRadius: 3, boxShadow: selected ? "0 0 0 3px rgba(67,94,190,.5)" : "0 1px 4px rgba(0,0,0,.4)", transition: "box-shadow .15s" }} />
-      {selected && <div style={{ position: "absolute", zIndex: 30, filter: "drop-shadow(0 4px 8px rgba(0,0,0,.18))", ...panePos[dir] }}><div style={{ position: "relative" }}><div style={arrowStyle[dir]} /><SensorPane sensor={sensor} /></div></div>}
+      {selected && (
+        <div style={{ position: "absolute", zIndex: 30, filter: "drop-shadow(0 4px 8px rgba(0,0,0,.18))", ...panePos[dir] }}>
+          <div style={{ position: "relative" }}>
+            <div style={arrowStyle[dir]} />
+            <SensorPane sensor={sensor} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -332,7 +319,9 @@ function SensorListItem({ sensor, selected, onToggle }) {
   const status = getPaneStatus(sensor); const statusDot = STATUS_STYLES[status].dot;
   return (
     <div onClick={() => onToggle(sensor.id)} className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer" style={{ background: "transparent", userSelect: "none" }} onMouseEnter={e => { e.currentTarget.style.background = "#f3f4f6"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-      <div style={{ width: 16, height: 16, flexShrink: 0, border: `2px solid ${selected ? "#435ebe" : "#adb5bd"}`, borderRadius: 3, background: selected ? "#435ebe" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>{selected && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}</div>
+      <div style={{ width: 16, height: 16, flexShrink: 0, border: `2px solid ${selected ? "#435ebe" : "#adb5bd"}`, borderRadius: 3, background: selected ? "#435ebe" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        {selected && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
+      </div>
       <div style={{ width: 14, height: 14, flexShrink: 0, background: sensor.color, border: `1.5px solid ${sensor.color === "#ffffff" ? "#adb5bd" : "rgba(0,0,0,.2)"}`, borderRadius: 2 }} />
       <span style={{ fontSize: 13 }}>{sensor.name}</span>
       <div style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
@@ -342,6 +331,13 @@ function SensorListItem({ sensor, selected, onToggle }) {
     </div>
   );
 }
+
+const LEGEND = [
+  { color: STATUS_STYLES["ok"].dot,      label: "Within limits" },
+  { color: STATUS_STYLES["breach"].dot,  label: "Limit breached" },
+  { color: STATUS_STYLES["no-data"].dot, label: "No data" },
+  { color: null, label: "Inactive area", isText: true },
+];
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -357,9 +353,14 @@ export default function P2F2MapPage() {
   const [mapSensors,  setMapSensors]  = useState(mapSensorsCache ?? MAP_SENSORS);
   const [loading,     setLoading]     = useState(!hasLiveData(mapSensorsCache ?? []));
 
+  const [limitsReady, setLimitsReady] = useState(Object.keys(limitsCache).length > 0);
+
   const allIds           = mapSensors.map(s => s.id);
   const allSelected      = selectedIds.size === allIds.length;
   const totalActiveCount = mapSensors.filter(s => s.hasData).length;
+
+  const limitsOpenRef = useRef(false);
+  useEffect(() => { limitsOpenRef.current = limitsOpen; }, [limitsOpen]);
 
   useEffect(() => {
     let interval;
@@ -382,11 +383,32 @@ export default function P2F2MapPage() {
         setMapSensors(newSensors);
         if (hasLiveData(newSensors)) setLoading(false);
 
-        setAllLimits(prev => {
-          const next = { ...prev };
-          json.data.forEach(d => { const sensor = MAP_SENSORS.find(s => s.areaId === d.areaId); if (sensor) next[sensor.id] = d.limits; });
-          return next;
-        });
+
+        // Fetch limits once on first load — modal reads from limitsCache, no fetch on open
+        if (Object.keys(limitsCache).length === 0) {
+          const entries = await Promise.all(
+            MAP_SENSORS.map(async (sensor) => {
+              try {
+                const res = await axios.get(`${API_BASE}/sensors/${sensor.areaId}/limits`);
+                const d   = res.data.data;
+                return [sensor.id, { tempUL: d.tempUL, tempLL: d.tempLL, humidUL: d.humidUL, humidLL: d.humidLL }];
+              } catch {
+                return [sensor.id, { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
+              }
+            })
+          );
+          limitsCache = Object.fromEntries(entries);
+          setLimitsReady(true);
+        }
+
+        // Only update allLimits if modal is closed — prevents disrupting draft state mid-edit
+        if (!limitsOpenRef.current) {
+          setAllLimits(prev => {
+            const next = { ...prev };
+            json.data.forEach(d => { const sensor = MAP_SENSORS.find(s => s.areaId === d.areaId); if (sensor) next[sensor.id] = d.limits; });
+            return next;
+          });
+        }
 
       } catch (err) { console.error("Failed to fetch P2F2 readings:", err); }
     };
@@ -415,7 +437,7 @@ export default function P2F2MapPage() {
           <aside style={{ width: 260, flexShrink: 0, background: "#fff", border: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
             <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
               <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>{allSelected ? "Deselect All" : "Select All"}</Button>
-              <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={() => setLimitsOpen(true)}>Adjust Sensor Limits</Button>
+              <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={!limitsReady} onClick={() => setLimitsOpen(true)}>{limitsReady ? "Adjust Sensor Limits" : "Loading Limits…"}</Button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
               <div className="text-sm px-1 pt-2 pb-1">Line Name</div>
