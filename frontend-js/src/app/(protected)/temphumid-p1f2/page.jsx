@@ -8,6 +8,7 @@ import { CustomModal } from "@/components/custom/CustomModal";
 const API_BASE = '/api/temphumid';
 // Module-level cache — persists across page navigations
 let mapSensorsCache = null;
+let limitsCache     = {};  // persists fetched limits across modal opens
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -94,38 +95,14 @@ const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, 
 };
 
 function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
-  const [draft,    setDraft]    = useState({});
-  const [loading,  setLoading]  = useState(true);
+  const [draft,    setDraft]    = useState(() => ({ ...limitsCache }));
+  const [loading,  setLoading]  = useState(false);
   const [errors,   setErrors]   = useState({});
   const [activeId, setActiveId] = useState(sensors[0]?.id);
   const [saving,   setSaving]   = useState(false);
   const [apiError, setApiError] = useState(null);
 
-  const originalRef = useRef({});
-
-  useEffect(() => {
-    const fetchLimits = async () => {
-      setLoading(true);
-      const entries = await Promise.all(
-        sensors.map(async ({ id }) => {
-          const sensor = MAP_SENSORS.find(s => s.id === id);
-          if (!sensor) return [id, allLimits[id] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
-          try {
-            const res = await axios.get(`${API_BASE}/sensors/${sensor.areaId}/limits`);
-            const d   = res.data.data;
-            return [id, { tempUL: d.tempUL, tempLL: d.tempLL, humidUL: d.humidUL, humidLL: d.humidLL }];
-          } catch {
-            return [id, allLimits[id] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
-          }
-        })
-      );
-      const fetched = Object.fromEntries(entries);
-      originalRef.current = JSON.parse(JSON.stringify(fetched));
-      setDraft(fetched);
-      setLoading(false);
-    };
-    fetchLimits();
-  }, []);
+  const originalRef = useRef(JSON.parse(JSON.stringify(limitsCache)));
 
   const setField = (sensorId, key, val) => {
     setDraft(prev => ({ ...prev, [sensorId]: { ...prev[sensorId], [key]: val } }));
@@ -188,6 +165,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     try {
       const payload = { sensors: changed.map(id => { const sensor = MAP_SENSORS.find(s => s.id === id); return { areaId: sensor.areaId, ...parsed[id] }; }) };
       await axios.post(`${API_BASE}/sensors/limits/batch`, payload);
+      limitsCache = { ...limitsCache, ...parsed }; // update cache with saved values
       onSave(parsed); onClose();
     } catch (err) { setApiError(err.message ?? "Something went wrong. Please try again."); }
     finally { setSaving(false); }
@@ -239,16 +217,16 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
           <div><p className="text-sm font-medium mb-3">Temperature</p><div style={{ display: "flex", gap: 16 }}><NumField sensorId={activeId} fieldKey="tempLL"  label="Lower Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} /><NumField sensorId={activeId} fieldKey="tempUL"  label="Upper Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} /></div></div>
           <div><p className="text-sm font-medium mb-3">Humidity</p><div style={{ display: "flex", gap: 16 }}><NumField sensorId={activeId} fieldKey="humidLL" label="Lower Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} /><NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} /></div></div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
-            {groups.map(group => { const list = sensors.filter(s => s.group === group); if (!list.find(s => s.id === activeId)) return null; return (<Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving || loading} onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>Apply to all {group.toLowerCase()}</Button>); })}
+            {groups.map(group => { const list = sensors.filter(s => s.group === group); if (!list.find(s => s.id === activeId)) return null; return (<Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving} onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>Apply to all {group.toLowerCase()}</Button>); })}
           </div>
           {apiError && <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">{apiError}</div>}
         </div>
       </div>
       <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
-        {saving           && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
-        {loading && !saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Loading current limits…</span>}
+        {saving             && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
+        {loading && !saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Refreshing limits…</span>}
         <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || loading || !hasChanges}>{saving ? "Saving…" : loading ? "Loading…" : "Save All"}</Button>
+        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || !hasChanges}>{saving ? "Saving…" : "Save All"}</Button>
       </div>
     </div>
   );
@@ -319,9 +297,14 @@ export default function P1F2MapPage() {
   const [mapSensors,  setMapSensors]  = useState(mapSensorsCache ?? MAP_SENSORS);
   const [loading,     setLoading]     = useState(!hasLiveData(mapSensorsCache ?? []));
 
+  const [limitsReady, setLimitsReady] = useState(Object.keys(limitsCache).length > 0);
+
   const allIds           = mapSensors.map(s => s.id);
   const allSelected      = selectedIds.size === allIds.length;
   const totalActiveCount = mapSensors.filter(s => s.hasData).length;
+
+  const limitsOpenRef = useRef(false);
+  useEffect(() => { limitsOpenRef.current = limitsOpen; }, [limitsOpen]);
 
   useEffect(() => {
     let interval;
@@ -340,11 +323,32 @@ export default function P1F2MapPage() {
         mapSensorsCache = newSensors;
         setMapSensors(newSensors);
         if (hasLiveData(newSensors)) setLoading(false);
-        setAllLimits(prev => {
-          const next = { ...prev };
-          json.data.forEach(d => { const sensor = MAP_SENSORS.find(s => s.areaId === d.areaId); if (sensor) next[sensor.id] = d.limits; });
-          return next;
-        });
+
+        // Fetch limits once on first load — modal reads from limitsCache, no fetch on open
+        if (Object.keys(limitsCache).length === 0) {
+          const entries = await Promise.all(
+            MAP_SENSORS.map(async (sensor) => {
+              try {
+                const res = await axios.get(`${API_BASE}/sensors/${sensor.areaId}/limits`);
+                const d   = res.data.data;
+                return [sensor.id, { tempUL: d.tempUL, tempLL: d.tempLL, humidUL: d.humidUL, humidLL: d.humidLL }];
+              } catch {
+                return [sensor.id, { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
+              }
+            })
+          );
+          limitsCache = Object.fromEntries(entries);
+          setLimitsReady(true);
+        }
+
+        // Only update allLimits if modal is closed — prevents disrupting draft state mid-edit
+        if (!limitsOpenRef.current) {
+          setAllLimits(prev => {
+            const next = { ...prev };
+            json.data.forEach(d => { const sensor = MAP_SENSORS.find(s => s.areaId === d.areaId); if (sensor) next[sensor.id] = d.limits; });
+            return next;
+          });
+        }
       } catch (err) { console.error("Failed to fetch P1F2 readings:", err); }
     };
     fetchReadings();
@@ -369,7 +373,7 @@ export default function P1F2MapPage() {
           <aside style={{ width: 260, flexShrink: 0, background: "#fff", border: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
             <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
               <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>{allSelected ? "Deselect All" : "Select All"}</Button>
-              <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={() => setLimitsOpen(true)}>Adjust Sensor Limits</Button>
+              <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={!limitsReady} onClick={() => setLimitsOpen(true)}>{limitsReady ? "Adjust Sensor Limits" : "Loading Limits…"}</Button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
               <div className="text-sm px-1 pt-2 pb-1">Line Name</div>

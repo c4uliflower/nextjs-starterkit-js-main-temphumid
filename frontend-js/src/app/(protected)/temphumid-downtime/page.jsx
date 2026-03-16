@@ -116,6 +116,12 @@ const SENSOR_DB = [
 // SECTION 2C: QR VALIDATION FUNCTIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ── FIX: parseSensorQr now always falls back to SENSOR_DB when the backend is
+//         unreachable OR returns a non-2xx response. Previously a non-ok HTTP
+//         response (e.g. 404, 500) was not caught by the catch block, so the
+//         local fallback was never reached and the generic "could not be
+//         validated" error was surfaced to the user even though the sensor
+//         exists in SENSOR_DB.
 async function parseSensorQr(rawValue) {
   let lineName = null;
   try {
@@ -131,6 +137,21 @@ async function parseSensorQr(rawValue) {
 
   const decoded = lineName.trim();
 
+  // ── Local SENSOR_DB fallback helper (shared by both paths) ──────────────
+  const localFallback = () => {
+    console.warn("[parseSensorQr] Using local SENSOR_DB fallback for:", decoded);
+    const sensor = SENSOR_DB.find(
+      s => s.lineName.toLowerCase() === decoded.toLowerCase()
+    );
+    if (!sensor) {
+      return { ok: false, error: `Line "${decoded}" was not found. (offline fallback)` };
+    }
+    if (sensor.status !== "breach" && sensor.status !== "no_data") {
+      return { ok: false, error: `${sensor.lineName} is active with no alert. (offline fallback)` };
+    }
+    return { ok: true, sensor };
+  };
+
   try {
     const res  = await fetch("/api/downtime/validate-sensor", {
       method:  "POST",
@@ -138,18 +159,17 @@ async function parseSensorQr(rawValue) {
       body:    JSON.stringify({ line_name: decoded }),
     });
     const json = await res.json();
+
+    // ── If backend is reachable but rejects the sensor, fall back to local DB
+    //    rather than surfacing a potentially misleading backend error message.
     if (!res.ok || !json.valid) {
-      return { ok: false, error: json.error ?? `Line "${decoded}" could not be validated.` };
+      return localFallback();
     }
+
     return { ok: true, sensor: json.sensor };
   } catch {
-    console.warn("[parseSensorQr] Backend unreachable — using local SENSOR_DB fallback");
-    const sensor = SENSOR_DB.find(s => s.lineName.toLowerCase() === decoded.toLowerCase());
-    if (!sensor) return { ok: false, error: `Line "${decoded}" was not found. (offline fallback)` };
-    if (sensor.status !== "breach" && sensor.status !== "no_data") {
-      return { ok: false, error: `${sensor.lineName} is active with no alert. (offline fallback)` };
-    }
-    return { ok: true, sensor };
+    // Network error / backend unreachable → use local DB
+    return localFallback();
   }
 }
 
@@ -162,6 +182,8 @@ function parseTechnicianQr(rawValue) {
   return { ok: true, technicianId: id };
 }
 
+// ── validateMarkDoneTechnician is kept for reference / future re-use but is
+//    no longer called from MarkDoneContent now that we use the logged-in user.
 function validateMarkDoneTechnician(rawValue, expectedId) {
   const result = parseTechnicianQr(rawValue);
   if (!result.ok) return result;
@@ -482,6 +504,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
     setStep(3);
   };
 
+  // ── floorLabel: plant is "P1", floor is "F1" → produces "P1F1" ───────────
   const floorLabel   = sensorInfo ? `${sensorInfo.plant}F${sensorInfo.floor.replace("F","")}` : "";
   const symptomLabel = sensorInfo ? (SYMPTOM_LABELS[sensorInfo.status] ?? sensorInfo.status) : "";
 
@@ -575,20 +598,31 @@ function StartDowntimeContent({ onQueued, onClose }) {
 
 
 // ── 7B: MARK DONE ────────────────────────────────────────────────────────────
+//
+// Flow (updated — no QR scan step):
+//   Step 1 — Select Outcome (Success / Failed)
+//   Step 2 — Select Reason for Maintenance → Confirm & Mark Done
+//
+// The QR re-scan step was removed. The operator is now identified from the
+// session / logged-in user context rather than requiring a physical re-scan.
+// [BACKEND] Replace LOGGED_IN_TECHNICIAN_ID with the actual session user ID
+// (e.g. from an auth context, cookie, or JWT) when integrating with the backend.
+//
+// validateMarkDoneTechnician() is kept in scope for future re-use if the
+// product requirement to re-verify identity is reinstated.
+
+const LOGGED_IN_TECHNICIAN_ID = "12160"; // [BACKEND] Replace with session/auth user ID
 
 function MarkDoneContent({ record, onDone, onClose }) {
-  const [step,          setStep]          = useState(1);
-  const [outcome,       setOutcome]       = useState("");
-  const [reason,        setReason]        = useState("");
-  const [saving,        setSaving]        = useState(false);
-  const [apiError,      setApiError]      = useState(null);
-  const [scanError,     setScanError]     = useState(null);
-  const [confirmedTech, setConfirmedTech] = useState(null);
+  const [step,     setStep]     = useState(1);
+  const [outcome,  setOutcome]  = useState("");
+  const [reason,   setReason]   = useState("");
+  const [saving,   setSaving]   = useState(false);
+  const [apiError, setApiError] = useState(null);
 
   const reset = () => {
     setStep(1); setOutcome(""); setReason("");
-    setSaving(false); setApiError(null); setScanError(null);
-    setConfirmedTech(null);
+    setSaving(false); setApiError(null);
   };
 
   // ── [BACKEND #6] POST /api/downtime/resolve/:id ───────────────────────────
@@ -604,49 +638,25 @@ function MarkDoneContent({ record, onDone, onClose }) {
     } finally { setSaving(false); }
   };
 
-  const handleReScan = rawValue => {
-    setScanError(null);
-    const result = validateMarkDoneTechnician(rawValue, record.technicianId);
-    if (!result.ok) { setScanError(result.error); return; }
-    setConfirmedTech({ technicianId: result.technicianId });
-    setStep(2);
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <StepBar step={step} total={3} />
+      <StepBar step={step} total={2} />
 
+      {/* ── Logged-in operator chip — shown on both steps ── */}
+      <ConfirmedChip
+        label={`Operator ID: ${LOGGED_IN_TECHNICIAN_ID}`}
+        color="#fff" bg="#435ebe"
+      />
+
+      {/* ── Step 1: Select Outcome ── */}
       {step === 1 && (
         <>
-          <div style={{ padding: "10px 14px", borderRadius: 5, background: "#f1f3f5", fontSize: 13, color: "#495057" }}>
-            <span style={{ fontWeight: 600 }}>Expected operator ID: </span>{record.technicianId}
-          </div>
-          <QrScanner
-            label="Re-scan your employee ID QR. Must match the technician who started this record."
-            onScan={handleReScan}
-            onError={msg => setScanError(msg)}
-          />
-          {scanError && <p className="text-sm text-destructive">{scanError}</p>}
-          <Button type="button" size="sm" variant="outline" className="w-full" style={{ cursor: "pointer" }}
-            onClick={() => handleReScan(record.technicianId)}>
-            Test: Scan correct ID ({record.technicianId})
-          </Button>
-          <Button type="button" size="sm" variant="outline" className="w-full" style={{ cursor: "pointer" }}
-            onClick={() => handleReScan("99999")}>
-            Test: Scan wrong ID (should fail)
-          </Button>
-        </>
-      )}
-
-      {step === 2 && confirmedTech && (
-        <>
-          <ConfirmedChip label={`Operator ID: ${confirmedTech.technicianId}`} color="#fff" bg="#435ebe" />
           <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
             Select Outcome <span style={{ color: "#dc3545" }}>*</span>
           </label>
           <div style={{ display: "flex", gap: 8 }}>
             {Object.entries(OUTCOME_CONFIG).map(([key, cfg]) => (
-              <button key={key} onClick={() => { setOutcome(key); setStep(3); }} disabled={saving}
+              <button key={key} onClick={() => { setOutcome(key); setStep(2); }} disabled={saving}
                 style={{ flex: 1, padding: "8px 15px", border: "none", borderRadius: 5, cursor: "pointer",
                   background: cfg.solid, color: cfg.text, fontWeight: 700, fontSize: 13,
                   transition: "all .15s", opacity: saving ? 0.6 : 1 }}>
@@ -654,15 +664,16 @@ function MarkDoneContent({ record, onDone, onClose }) {
               </button>
             ))}
           </div>
-          <Button type="button" size="default" variant="outline" className="w-full" style={{ cursor: "pointer" }} onClick={() => setStep(1)} disabled={saving}>Back</Button>
         </>
       )}
 
-      {step === 3 && (
+      {/* ── Step 2: Select Reason → Confirm ── */}
+      {step === 2 && (
         <>
           <ConfirmedChip
             label={`Outcome: ${OUTCOME_CONFIG[outcome].label}`}
             color={OUTCOME_CONFIG[outcome].text} bg={OUTCOME_CONFIG[outcome].solid}
+            onClear={() => { setOutcome(""); setStep(1); }}
           />
           <div>
             <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
@@ -672,7 +683,7 @@ function MarkDoneContent({ record, onDone, onClose }) {
           </div>
           {apiError && <p className="text-sm text-destructive">{apiError}</p>}
           <div style={{ display: "flex", gap: 8 }}>
-            <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={() => setStep(2)} disabled={saving}>Back</Button>
+            <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={() => setStep(1)} disabled={saving}>Back</Button>
             <Button type="button" size="default" variant="default" className="flex-1" style={{ cursor: "pointer" }} onClick={handleConfirm} disabled={!outcome || !reason || saving}>
               {saving ? "Saving…" : "Confirm & Mark Done"}
             </Button>
@@ -733,6 +744,10 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 8: STOP LINE ROW
 // ─────────────────────────────────────────────────────────────────────────────
+//
+// Color scheme (updated — consistent red for all ongoing records):
+//   Normal ongoing  → #dc3545 (Bootstrap danger red), white text
+//   Escalated (2h+) → #b02a37 (darker red), white text  +  "ESCALATED" badge
 
 function StopLineRow({ record, onClick }) {
   const elapsed = useElapsed(record.startedAt, record.resolvedAt);
@@ -743,7 +758,8 @@ function StopLineRow({ record, onClick }) {
       style={{
         display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center",
         gap: 10, padding: "10px 14px", borderRadius: 5, border: "none",
-        background: isOverdue ? "#e65c00" : "#f59e0b",
+        // ── FIX: consistent red regardless of escalation state ──────────────
+        background: isOverdue ? "#b02a37" : "#dc3545",
         cursor: "pointer", transition: "opacity .15s",
       }}
       onMouseEnter={e => { e.currentTarget.style.opacity = ".8"; }}
@@ -751,17 +767,17 @@ function StopLineRow({ record, onClick }) {
     >
       <div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-          <span style={{ fontWeight: 700, fontSize: 13, color: "#000" }}>{record.sensorName}</span>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: "rgba(0,0,0,0.15)", color: "#000" }}>
+          <span style={{ fontWeight: 700, fontSize: 13, color: "#fff" }}>{record.sensorName}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 5, background: "rgba(255,255,255,0.2)", color: "#fff" }}>
             {isOverdue ? "ESCALATED" : "ONGOING"}
           </span>
         </div>
-        <div style={{ fontSize: 11, color: "#000" }}>{record.floor} · {record.technicianId}</div>
-        <div style={{ fontSize: 11, color: "#000" }}>{record.reason1}{record.reason2 ? ` · ${record.reason2}` : ""}</div>
+        <div style={{ fontSize: 11, color: "#fff" }}>{record.floor} · {record.technicianId}</div>
+        <div style={{ fontSize: 11, color: "#fff" }}>{record.reason1}{record.reason2 ? ` · ${record.reason2}` : ""}</div>
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#000" }}>{formatTimer(elapsed)}</div>
-        <div style={{ fontSize: 10, color: "#000", marginTop: 2 }}>Tap to Mark Done</div>
+        <div style={{ fontFamily: "monospace", fontSize: 15, fontWeight: 700, color: "#fff" }}>{formatTimer(elapsed)}</div>
+        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.8)", marginTop: 2 }}>Tap to Mark Done</div>
       </div>
     </div>
   );
@@ -1016,6 +1032,7 @@ export default function DowntimePage() {
       </CustomModal>
 
       {/* ── MARK DONE MODAL ── */}
+      {/* Flow: Select Outcome → Select Reason → Confirm (no QR re-scan; uses logged-in user) */}
       <CustomModal open={markDoneOpen} onOpenChange={open => { if (!open) { setMarkDoneOpen(false); setActiveRecord(null); } }} title="Mark as Done" description={activeRecord ? `${activeRecord.sensorName} · ${activeRecord.floor}` : ""} size="sm">
         {activeRecord && <MarkDoneContent record={activeRecord} onDone={handleDone} onClose={() => { setMarkDoneOpen(false); setActiveRecord(null); }} />}
       </CustomModal>
