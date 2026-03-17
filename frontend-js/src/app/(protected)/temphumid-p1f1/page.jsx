@@ -13,13 +13,18 @@ const API_BASE = '/api/temphumid';
 
 const FLOOR_PLAN_IMAGE = "/logo/assets/P1F1-6.png";
 
+// Add areaIds here to suppress breach alerts for sensors in inactive areas.
+// Breaches will still be detected by the backend but shown as "ok" on the map.
 const INACTIVE_AREAS = new Set([]);
 
-// Module-level caches — persist across page navigations
+// Module-level caches — persist across page navigations so switching back
+// to this page shows the last known data instantly without a loading flash.
 let limitsCache      = {};
 let mapSensorsCache  = null;
 let dessSensorsCache = null;
 
+// Static sensor registry for map markers — x/y are percentage positions on the floor plan image.
+// Live data (temp, humid, status, limits) is merged in from the API on each poll.
 const MAP_SENSORS = [
   { id: "aoi",         areaId: "P1F1-04", name: "AOI",                color: "#f5c518", x: 78.9,  y: 52.8, direction: "bottom", },
   { id: "dipping2",    areaId: "P1F1-06", name: "Dipping2",           color: "#1e90ff", x: 53,    y: 48.5,                      },
@@ -33,8 +38,10 @@ const MAP_SENSORS = [
   { id: "coating",     areaId: "P1F1-17", name: "Coating Area",       color: "#ffffff", x: 60.5,  y: 80,                        },
 ];
 
+// Fixed position of the dessicator zone cluster marker on the floor plan
 const DESSICATOR_ZONE = { x: 11.5, y: 82 };
 
+// Dessicators are grouped separately — they share a zone marker and a bottom card row
 const DESSICATOR_SENSORS = [
   { id: "dess-1", areaId: "P1F1-09", name: "SMT MH Dessicator 1", },
   { id: "dess-2", areaId: "P1F1-07", name: "SMT MH Dessicator 2", },
@@ -44,6 +51,7 @@ const DESSICATOR_SENSORS = [
   //{ id: "dess-6", areaId: "P1F1-18", name: "SMT MH Dessicator 6", },
 ];
 
+// Combined list used by the Adjust Sensor Limits modal
 const ALL_EDITABLE_SENSORS = [
   ...MAP_SENSORS.map(s        => ({ id: s.id, name: s.name, group: "Sensors"     })),
   ...DESSICATOR_SENSORS.map(s => ({ id: s.id, name: s.name, group: "Dessicators" })),
@@ -54,14 +62,14 @@ const ALL_EDITABLE_SENSORS = [
 // SECTION 2: UTILITY
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getSensorLimits(sensorId, allLimits) {
-  return allLimits[sensorId] ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 };
-}
-
+// Returns the display status of a sensor pane.
+// Falls back to "no-data" if the sensor hasn't received a reading yet.
 function getPaneStatus(sensor) {
   return sensor.status ?? "no-data";
 }
 
+// Visual style map keyed by sensor status.
+// "inactive-breach" looks identical to "ok" — breach is suppressed for inactive areas.
 const STATUS_STYLES = {
   "ok":              { bg: "#e8fff8", text: "#212529", border: "#00c9a7", dot: "#00c9a7" },
   "breach":          { bg: "#ffe8e8", text: "#212529", border: "#dc3545", dot: "#dc3545" },
@@ -69,6 +77,7 @@ const STATUS_STYLES = {
   "no-data":         { bg: "#f0f0f0", text: "#495057", border: "#adb5bd", dot: "#adb5bd" },
 };
 
+// Small badge shown on panes/cards when a sensor's area is inactive (breach suppressed)
 function InactiveAreaBadge() {
   return (
     <span style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 8, fontWeight: 700, letterSpacing: ".04em", textTransform: "uppercase", background: "#fff8e1", color: "#000", border: "1px solid #ffe082", borderRadius: 5, padding: "1px 5px", verticalAlign: "middle", whiteSpace: "nowrap" }}>
@@ -77,6 +86,8 @@ function InactiveAreaBadge() {
   );
 }
 
+// Determines which direction the info pane floats relative to its marker.
+// Explicit direction on the sensor takes priority; otherwise inferred from position.
 function getPaneDirection(sensor) {
   if (sensor.direction) return sensor.direction;
   if (sensor.y < 20) return "bottom";
@@ -86,6 +97,8 @@ function getPaneDirection(sensor) {
   return "top";
 }
 
+// Returns the aggregate status of the dessicator zone based on its sensors.
+// "breach" if any sensor is breached, "no-data" if all have no data, otherwise "ok".
 function getDessicatorZoneStatus(sensors) {
   if (!sensors || !Array.isArray(sensors) || sensors.length === 0) return "no-data";
   if (sensors.every(s => !s.hasData)) return "no-data";
@@ -95,6 +108,8 @@ function getDessicatorZoneStatus(sensors) {
 
 const SPINNER_STYLE = `@keyframes spinLoader { to { transform: rotate(360deg); } }`;
 
+// Full-screen loading overlay — shown only on first load before any data arrives.
+// Subsequent 30s polls run silently without showing this overlay.
 function LoadingOverlay() {
   return (
     <>
@@ -117,6 +132,8 @@ function LoadingOverlay() {
 // SECTION 3: SENSOR LIMITS MODAL CONTENT
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Reusable numeric input field used inside the limits modal.
+// Shows validation error styling and an inline unit label (°C or %).
 const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, saving }) => {
   const err = errors[`${sensorId}.${fieldKey}`];
   return (
@@ -132,14 +149,17 @@ const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, 
   );
 };
 
-function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
+// Modal content for adjusting sensor limits.
+// Draft state is initialized from limitsCache (pre-fetched on page load).
+// Only sensors with actual changes are sent to the API on save.
+function SensorLimitsContent({ onClose, sensors }) {
   const [draft,    setDraft]    = useState(() => ({ ...limitsCache }));
-  const [loading,  setLoading]  = useState(false);
   const [errors,   setErrors]   = useState({});
   const [activeId, setActiveId] = useState(sensors[0]?.id);
   const [saving,   setSaving]   = useState(false);
   const [apiError, setApiError] = useState(null);
 
+  // Snapshot of limits at modal open — used to diff against draft on save
   const originalRef = useRef(JSON.parse(JSON.stringify(limitsCache)));
 
   const setField = (sensorId, key, val) => {
@@ -148,6 +168,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     setApiError(null);
   };
 
+  // Validates all sensors in the modal. Returns parsed numeric values and any errors.
   const validate = () => {
     const e = {}; const parsed = {};
     for (const { id } of sensors) {
@@ -163,6 +184,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     return { errors: e, parsed };
   };
 
+  // Returns sensor ids whose parsed values differ from the original snapshot
   const getChangedIds = (parsed) =>
     Object.keys(parsed).filter(id => {
       const orig = originalRef.current[id];
@@ -173,6 +195,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
       );
     });
 
+  // Returns true if the current draft differs from the original for a given sensor id
   const isChanged = (id) => {
     const orig = originalRef.current[id];
     const curr = draft[id];
@@ -201,9 +224,17 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     if (changed.length === 0) { onClose(); return; }
     setSaving(true); setApiError(null);
     try {
-      const payload = { sensors: changed.map(id => { const sensor = [...MAP_SENSORS, ...DESSICATOR_SENSORS].find(s => s.id === id); return { areaId: sensor.areaId, ...parsed[id] }; }) };
+      // Build payload using both MAP_SENSORS and DESSICATOR_SENSORS to resolve areaIds
+      const payload = {
+        sensors: changed.map(id => {
+          const sensor = [...MAP_SENSORS, ...DESSICATOR_SENSORS].find(s => s.id === id);
+          return { areaId: sensor.areaId, ...parsed[id] };
+        }),
+      };
       await axios.post(`${API_BASE}/sensors/limits/batch`, payload);
-      onSave(parsed); onClose();
+      // Update cache so modal re-opens with fresh values next time
+      limitsCache = { ...limitsCache, ...parsed };
+      onClose();
     } catch (err) {
       setApiError(err.message ?? "Something went wrong. Please try again.");
     } finally {
@@ -211,9 +242,9 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
     }
   };
 
-  const hasRowError = id => ["tempUL", "tempLL", "humidUL", "humidLL"].some(k => errors[`${id}.${k}`]);
+  const hasRowError  = id => ["tempUL", "tempLL", "humidUL", "humidLL"].some(k => errors[`${id}.${k}`]);
   const activeSensor = sensors.find(s => s.id === activeId);
-  const groups = [...new Set(sensors.map(s => s.group))];
+  const groups       = [...new Set(sensors.map(s => s.group))];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
@@ -221,7 +252,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
         <p className="text-base font-semibold">Adjust Sensor Limits</p>
         <p className="text-sm text-muted-foreground mt-0.5">
           Plant 1 Floor 1 · Each sensor has its own threshold
-          {hasChanges && !loading && (
+          {hasChanges && (
             <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#435ebe" }}>
               {changedIds.length} unsaved change{changedIds.length !== 1 ? "s" : ""}
             </span>
@@ -229,6 +260,7 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
         </p>
       </div>
       <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
+        {/* Sensor list sidebar */}
         <div style={{ width: 180, flexShrink: 0, borderRight: "1px solid #e9ecef", overflowY: "auto", padding: "8px 0" }}>
           {groups.map(group => {
             const list = sensors.filter(s => s.group === group);
@@ -241,9 +273,11 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
                     className={`text-sm ${id === activeId ? "font-semibold" : ""}`}>
                     <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
                     <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      {/* Orange dot — unsaved change indicator */}
                       {!hasRowError(id) && isChanged(id) && (
                         <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fd7e14", display: "block" }} title="Unsaved change" />
                       )}
+                      {/* Red dot — validation error indicator */}
                       {hasRowError(id) && <span className="text-destructive" style={{ fontSize: 16, marginLeft: 4, lineHeight: 1 }}>•</span>}
                     </div>
                   </div>
@@ -252,6 +286,8 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
             );
           })}
         </div>
+
+        {/* Active sensor edit panel */}
         <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24, background: "#fff" }}>
           <p className="text-base font-semibold">{activeSensor?.name}</p>
           <div>
@@ -268,26 +304,34 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
               <NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} />
             </div>
           </div>
+          {/* Apply current sensor's values to all sensors in the same group */}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
             {groups.map(group => {
               const list = sensors.filter(s => s.group === group);
               if (!list.find(s => s.id === activeId)) return null;
               return (
-                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving || loading}
+                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving}
                   onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>
                   Apply to all {group.toLowerCase()}
                 </Button>
               );
             })}
           </div>
-          {apiError && <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">{apiError}</div>}
+          {apiError && (
+            <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">
+              {apiError}
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Modal footer */}
       <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
         {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
-        {loading && !saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Loading current limits…</span>}
         <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || loading || !hasChanges}>{saving ? "Saving…" : loading ? "Loading…" : "Save All"}</Button>
+        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || !hasChanges}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
       </div>
     </div>
   );
@@ -298,6 +342,8 @@ function SensorLimitsContent({ allLimits, onSave, onClose, sensors }) {
 // SECTION 4: MAP UI COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Floating info pane shown when a sensor marker is selected.
+// Displays current temp/humid readings and their limits.
 function SensorPane({ sensor }) {
   const status = getPaneStatus(sensor);
   const style  = STATUS_STYLES[status];
@@ -318,6 +364,8 @@ function SensorPane({ sensor }) {
   );
 }
 
+// Clickable colored square on the floor plan image.
+// Clicking toggles the floating SensorPane for that sensor.
 function SensorMarker({ sensor, selected, onToggle }) {
   const isWhite = sensor.color === "#ffffff";
   const dir     = getPaneDirection(sensor);
@@ -347,7 +395,10 @@ function SensorMarker({ sensor, selected, onToggle }) {
   );
 }
 
-function DessicatorZoneMarker({ open, onToggle, allLimits, sensors }) {
+// Compact cluster marker for the dessicator zone.
+// Shows aggregate status dot and breach count badge.
+// Clicking opens a popup listing all individual dessicator readings.
+function DessicatorZoneMarker({ open, onToggle, sensors }) {
   const zoneStatus  = getDessicatorZoneStatus(sensors);
   const breachCount = sensors.filter(s => getPaneStatus(s) === "breach").length;
   const dotColor    = STATUS_STYLES[zoneStatus].border;
@@ -384,6 +435,7 @@ function DessicatorZoneMarker({ open, onToggle, allLimits, sensors }) {
   );
 }
 
+// Sidebar list row — checkbox-style toggle for showing/hiding a sensor's pane on the map
 function SensorListItem({ sensor, selected, onToggle }) {
   const status    = getPaneStatus(sensor);
   const statusDot = STATUS_STYLES[status].dot;
@@ -396,13 +448,16 @@ function SensorListItem({ sensor, selected, onToggle }) {
       <div style={{ width: 14, height: 14, flexShrink: 0, background: sensor.color, border: `1.5px solid ${sensor.color === "#ffffff" ? "#adb5bd" : "rgba(0,0,0,.2)"}`, borderRadius: 2 }} />
       <span style={{ fontSize: 13 }}>{sensor.name}</span>
       <div style={{ marginLeft: "auto", flexShrink: 0, display: "flex", alignItems: "center", gap: 4 }}>
+        {/* Yellow dot — inactive area indicator */}
         {sensor.activeLocation === false && <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe082", display: "block" }} title="Inactive area — alarms suppressed" />}
+        {/* Status dot */}
         <span style={{ width: 8, height: 8, borderRadius: "50%", background: statusDot, display: "block" }} />
       </div>
     </div>
   );
 }
 
+// Bottom row card showing a single dessicator's readings
 function DessicatorCard({ sensor }) {
   const status = getPaneStatus(sensor);
   const style  = STATUS_STYLES[status];
@@ -410,23 +465,36 @@ function DessicatorCard({ sensor }) {
   return (
     <div style={{ background: style.bg, border: `2px solid ${style.border}`, borderRadius: 8, padding: "8px 12px", color: style.text, flex: 1, minWidth: 0, boxShadow: "0 4px 12px rgba(0,0,0,.1)" }}>
       <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 4, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 4 }}>{sensor.name}{isInactiveBreach && <InactiveAreaBadge />}</div>
-      {sensor.hasData ? (<><div style={{ fontSize: 12 }}>Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong></div><div style={{ fontSize: 12 }}>Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong></div></>) : <div style={{ fontSize: 12, opacity: 0.75 }}>No data available</div>}
+      {sensor.hasData ? (
+        <>
+          <div style={{ fontSize: 12 }}>Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong></div>
+          <div style={{ fontSize: 12 }}>Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong></div>
+        </>
+      ) : <div style={{ fontSize: 12, opacity: 0.75 }}>No data available</div>}
     </div>
   );
 }
+
+// Sidebar legend entries
+const LEGEND = [
+  { color: STATUS_STYLES["ok"].dot,      label: "Within limits"  },
+  { color: STATUS_STYLES["breach"].dot,  label: "Limit breached" },
+  { color: STATUS_STYLES["no-data"].dot, label: "No data"        },
+  { color: null, label: "Inactive area", isText: true            },
+];
 
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 5: MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
+// Returns true if at least one sensor in the list has a live reading
 const hasLiveData = (sensors) => sensors?.some(s => s.hasData) ?? false;
 
 export default function P1F1MapPage() {
   const [selectedIds, setSelectedIds] = useState(new Set(MAP_SENSORS.map(s => s.id)));
   const [dessOpen,    setDessOpen]    = useState(false);
   const [limitsOpen,  setLimitsOpen]  = useState(false);
-  const [allLimits,   setAllLimits]   = useState({});
   const [mapSensors,  setMapSensors]  = useState(mapSensorsCache  ?? MAP_SENSORS);
   const [dessSensors, setDessSensors] = useState(dessSensorsCache ?? DESSICATOR_SENSORS);
   const [loading,     setLoading]     = useState(!hasLiveData(mapSensorsCache ?? []));
@@ -435,7 +503,11 @@ export default function P1F1MapPage() {
   const allSelected      = selectedIds.size === allIds.length;
   const totalActiveCount = mapSensors.filter(s => s.hasData).length;
 
+  // limitsReady gates the "Adjust Sensor Limits" button — true once limitsCache is populated
   const [limitsReady, setLimitsReady] = useState(Object.keys(limitsCache).length > 0);
+
+  // Ref used inside the polling interval to check if the modal is open
+  // without causing the effect to re-run when limitsOpen changes
   const limitsOpenRef = useRef(false);
   useEffect(() => { limitsOpenRef.current = limitsOpen; }, [limitsOpen]);
 
@@ -447,12 +519,14 @@ export default function P1F1MapPage() {
         const res  = await axios.get(`${API_BASE}/sensors/readings/current`, { params: { floor: "p1f1" } });
         const json = res.data;
 
+        // Merge live API response into both sensor arrays
         const merge = (sensors) =>
           sensors.map(sensor => {
             const live = json.data.find(d => d.areaId === sensor.areaId);
             if (!live) return sensor;
             const activeLocation = !INACTIVE_AREAS.has(sensor.areaId);
             let status = live.status;
+            // Suppress breach display for inactive areas
             if (status === "breach" && !activeLocation) status = "inactive-breach";
             return { ...sensor, temp: live.temperature, humid: live.humidity, hasData: live.hasData, lastSeen: live.lastSeen, activeLocation, status, limits: live.limits };
           });
@@ -467,7 +541,8 @@ export default function P1F1MapPage() {
 
         if (hasLiveData(newMap) || hasLiveData(newDess)) setLoading(false);
 
-        // Fetch limits once on first load — one request for all sensors (batch-show)
+        // Fetch limits once on first load — one batch request for all sensors.
+        // limitsCache persists across navigations so this only runs once per session.
         if (Object.keys(limitsCache).length === 0) {
           try {
             const areaIds = ALL_EDITABLE_SENSORS.map(s => {
@@ -486,23 +561,12 @@ export default function P1F1MapPage() {
             });
             limitsCache = Object.fromEntries(entries);
           } catch {
+            // Fallback to defaults so the button still becomes ready
             limitsCache = Object.fromEntries(
               ALL_EDITABLE_SENSORS.map(s => [s.id, { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }])
             );
           }
           setLimitsReady(true);
-        }
-
-        // Only update allLimits if modal is closed — prevents disrupting draft state mid-edit
-        if (!limitsOpenRef.current) {
-          setAllLimits(prev => {
-            const next = { ...prev };
-            json.data.forEach(d => {
-              const sensor = [...MAP_SENSORS, ...DESSICATOR_SENSORS].find(s => s.areaId === d.areaId);
-              if (sensor) next[sensor.id] = d.limits;
-            });
-            return next;
-          });
         }
 
       } catch (err) {
@@ -523,12 +587,15 @@ export default function P1F1MapPage() {
 
       {loading && <LoadingOverlay />}
 
+      {/* ── Page header ── */}
       <div style={{ marginTop: 10, padding: "14px 24px", flexShrink: 0 }} className="bg-background">
         <h1 className="text-2xl font-bold">Map View</h1>
         <p className="text-sm text-muted-foreground mt-1">{totalActiveCount} sensor{totalActiveCount !== 1 ? "s" : ""} active · Plant 1 Floor 1</p>
       </div>
 
       <div className="flex flex-1 overflow-hidden" style={{ minHeight: 0 }}>
+
+        {/* ── Sidebar ── */}
         <div style={{ paddingLeft: 20, paddingTop: 20, paddingBottom: 20, boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
           <aside style={{ width: 260, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9ecef", border: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
             <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
@@ -544,7 +611,7 @@ export default function P1F1MapPage() {
               {mapSensors.map(s => <SensorListItem key={s.id} sensor={s} selected={selectedIds.has(s.id)} onToggle={toggle} />)}
             </div>
             <div style={{ padding: "10px 20px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
-              {[{ color: STATUS_STYLES["ok"].dot, label: "Within limits" }, { color: STATUS_STYLES["breach"].dot, label: "Limit breached" }, { color: STATUS_STYLES["no-data"].dot, label: "No data" }, { color: null, label: "Inactive area", isText: true }].map(({ color, label, isText }) => (
+              {LEGEND.map(({ color, label, isText }) => (
                 <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
                   {isText ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe082", display: "block", flexShrink: 0 }} /> : <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />}
                   {label}
@@ -554,27 +621,35 @@ export default function P1F1MapPage() {
           </aside>
         </div>
 
+        {/* ── Map area ── */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 20, overflow: "hidden", minHeight: 0, borderRadius: 5 }}>
+
+            {/* Floor plan with overlaid markers */}
             <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid #e9ecef", minHeight: 0 }}
               onClick={e => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}>
               <img src={FLOOR_PLAN_IMAGE} alt="P1F1 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
               {mapSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
               <DessicatorZoneMarker open={dessOpen} onToggle={() => setDessOpen(v => !v)} sensors={dessSensors} />
             </div>
+
+            {/* Dessicator bottom row cards */}
             <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "10px 16px", flexShrink: 0 }}>
               <div className="text-sm mb-2">Dessicators</div>
               <div style={{ display: "flex", gap: 10, overflowX: "auto" }}>
                 {dessSensors.map(s => <DessicatorCard key={s.id} sensor={s} />)}
               </div>
             </div>
+
           </div>
         </div>
       </div>
 
+      {/* ── Adjust Sensor Limits modal ── */}
       <CustomModal open={limitsOpen} onOpenChange={open => { if (!open) setLimitsOpen(false); }} title="Adjust Sensor Limits" size="lg" fixedLayout>
-        <SensorLimitsContent allLimits={allLimits} onSave={newLimits => setAllLimits(newLimits)} onClose={() => setLimitsOpen(false)} sensors={ALL_EDITABLE_SENSORS} />
+        <SensorLimitsContent onClose={() => setLimitsOpen(false)} sensors={ALL_EDITABLE_SENSORS} />
       </CustomModal>
+
     </div>
   );
 }

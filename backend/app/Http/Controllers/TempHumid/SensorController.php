@@ -20,9 +20,9 @@ class SensorController extends Controller
         'p1f1'  => ['plant' => '1',     'floor' => '1'],
         'p1f2'  => ['plant' => '1',     'floor' => '2'],
         'p2f1'  => ['plant' => '2',     'floor' => '1'],
-        'p2f2' => ['plant' => '2', 'floor' => '2', 'extra_area_ids' => ['P1F1-16']],
+        'p2f2'  => ['plant' => '2',     'floor' => '2', 'extra_area_ids' => ['P1F1-16']],
         'p12f2' => ['plant' => '1 & 2', 'floor' => '2'],
-        'wh' => ['plant' => '2', 'floor' => '1', 'location_like' => 'P2F1WH'],
+        'wh'    => ['plant' => '2',     'floor' => '1', 'location_like' => 'P2F1WH'],
     ];
 
     /**
@@ -39,25 +39,8 @@ class SensorController extends Controller
             $query = DB::connection('temphumid')
                 ->table('Temp_Logger_Chip_ID');
 
-            if ($request->has('floor')) {
-                $slug = strtolower($request->query('floor'));
-                $map  = self::FLOOR_MAP[$slug] ?? null;
-
-               if ($map) {
-                    $query->where(function ($q) use ($map) {
-                        $q->where('Plant', $map['plant'])
-                        ->where('Floor', $map['floor']);
-                        if (isset($map['location_like'])) {
-                            $q->where('Location', 'like', '%' . $map['location_like'] . '%');
-                        }
-                    });
-                    if (!empty($map['extra_area_ids'])) {
-                        $query->orWhere(function ($q) use ($map) {
-                            $q->whereIn('Area ID', $map['extra_area_ids']);
-                        });
-                    }
-                }
-            }
+            // Apply floor filter if ?floor= is present
+            $this->applyFloorFilter($query, $request);
 
             $sensors = $query->get();
             $data    = $sensors->map(fn ($s) => $this->formatSensor($s));
@@ -88,25 +71,8 @@ class SensorController extends Controller
                 ->table('Temp_Logger_Chip_ID')
                 ->where('Status', 'Active');
 
-            if ($request->has('floor')) {
-                $slug = strtolower($request->query('floor'));
-                $map  = self::FLOOR_MAP[$slug] ?? null;
-
-                if ($map) {
-                    $query->where(function ($q) use ($map) {
-                        $q->where('Plant', $map['plant'])
-                        ->where('Floor', $map['floor']);
-                        if (isset($map['location_like'])) {
-                            $q->where('Location', 'like', '%' . $map['location_like'] . '%');
-                        }
-                    });
-                    if (!empty($map['extra_area_ids'])) {
-                        $query->orWhere(function ($q) use ($map) {
-                            $q->whereIn('Area ID', $map['extra_area_ids']);
-                        });
-                    }
-                }
-            }
+            // Apply floor filter if ?floor= is present
+            $this->applyFloorFilter($query, $request);
 
             $sensors = $query->get();
 
@@ -184,6 +150,49 @@ class SensorController extends Controller
     // -------------------------------------------------------------------------
     // Private helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Applies a floor slug filter to the given query builder if ?floor= is present
+     * in the request. Resolves the slug against FLOOR_MAP and applies the
+     * appropriate Plant/Floor/Location constraints.
+     *
+     * Extracted to avoid duplicating this block in index() and currentReadings().
+     *
+     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  Request                             $request
+     */
+    private function applyFloorFilter($query, Request $request): void
+    {
+        if (! $request->has('floor')) {
+            return;
+        }
+
+        $slug = strtolower($request->query('floor'));
+        $map  = self::FLOOR_MAP[$slug] ?? null;
+
+        if (! $map) {
+            return;
+        }
+
+        $query->where(function ($q) use ($map) {
+            $q->where('Plant', $map['plant'])
+              ->where('Floor', $map['floor']);
+
+            // Some floors (e.g. WH) need an additional Location filter
+            // to distinguish them from other floors with the same Plant/Floor values
+            if (isset($map['location_like'])) {
+                $q->where('Location', 'like', '%' . $map['location_like'] . '%');
+            }
+        });
+
+        // Some floors (e.g. p2f2) include sensors from a different area ID
+        // that don't match the Plant/Floor filter above (e.g. CIS on P1F1-16)
+        if (! empty($map['extra_area_ids'])) {
+            $query->orWhere(function ($q) use ($map) {
+                $q->whereIn('Area ID', $map['extra_area_ids']);
+            });
+        }
+    }
 
     /**
      * Fetch the latest limits row from TempHumid_Limits_Log for each areaId,
