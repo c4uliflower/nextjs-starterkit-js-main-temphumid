@@ -53,5 +53,6 @@ Route::middleware(['auth:mat-auth'])->group(function () {
         Route::get('/sensors/{areaId}/limits', [SensorLimitController::class, 'show']);
         Route::post('/sensors/{areaId}/limits', [SensorLimitController::class, 'update']);
         Route::post('/sensors/limits/batch', [SensorLimitController::class, 'batchUpdate']);
+        Route::get('sensors/limits/batch-show', [SensorLimitController::class, 'batchShow']);
         });
 });

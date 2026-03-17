@@ -53,6 +53,83 @@ class SensorLimitController extends Controller
     }
 
     /**
+     * GET /api/temphumid/sensors/limits/batch-show
+     * Returns the LATEST limits for multiple sensors in one query.
+     * Uses the same WHERE NOT EXISTS pattern as SensorController::fetchLatestLimits().
+     * Falls back to Temp_Logger_Chip_ID values for sensors with no log entry.
+     * Used by: map page on load (limits pre-fetch, replaces N individual requests).
+     *
+     * Query params:
+     *   ?areaIds[]=P1F1-04&areaIds[]=P1F1-02   (required, at least one)
+     */
+    public function batchShow(Request $request): JsonResponse
+    {
+        $request->validate([
+            'areaIds'   => ['required', 'array', 'min:1'],
+            'areaIds.*' => ['required', 'string'],
+        ]);
+
+        try {
+            $areaIds = $request->query('areaIds');
+
+            // Fetch sensor metadata for fallback limits
+            $sensors = DB::connection('temphumid')
+                ->table('Temp_Logger_Chip_ID')
+                ->whereIn('Area ID', $areaIds)
+                ->get(['Area ID', 'Line Name', 'Temp_Upper_Limit', 'Temp_Lower_Limit', 'Humid_Upper_Limit', 'Humid_Lower_Limit']);
+
+            // Fetch latest limits from log — one query, WHERE NOT EXISTS pattern
+            $logRows = DB::connection('temphumid')
+                ->table('TempHumid_Limits_Log as ll')
+                ->whereIn('ll.Area ID', $areaIds)
+                ->where(function ($q) {
+                    $q->whereNotExists(function ($sub) {
+                        $sub->from('TempHumid_Limits_Log as ll2')
+                            ->whereColumn('ll2.Area ID', 'll.Area ID')
+                            ->where(function ($inner) {
+                                $inner->where('ll2.changed_at', '>', DB::raw('ll.changed_at'))
+                                      ->orWhere(function ($tie) {
+                                          $tie->where('ll2.changed_at', '=', DB::raw('ll.changed_at'))
+                                              ->where('ll2.ID', '>', DB::raw('ll.ID'));
+                                      });
+                            });
+                    });
+                })
+                ->get(['Area ID', 'Temp_Upper_Limit', 'Temp_Lower_Limit', 'Humid_Upper_Limit', 'Humid_Lower_Limit']);
+
+            // Key log rows by areaId
+            $logMap = [];
+            foreach ($logRows as $row) {
+                $logMap[$row->{'Area ID'}] = $row;
+            }
+
+            // Build response — prefer log values, fall back to Temp_Logger_Chip_ID
+            $data = [];
+            foreach ($sensors as $sensor) {
+                $areaId = $sensor->{'Area ID'};
+                $lim    = $logMap[$areaId] ?? null;
+
+                $data[$areaId] = [
+                    'areaId'  => $areaId,
+                    'tempUL'  => $lim ? $lim->Temp_Upper_Limit  : $sensor->Temp_Upper_Limit,
+                    'tempLL'  => $lim ? $lim->Temp_Lower_Limit  : $sensor->Temp_Lower_Limit,
+                    'humidUL' => $lim ? $lim->Humid_Upper_Limit : $sensor->Humid_Upper_Limit,
+                    'humidLL' => $lim ? $lim->Humid_Lower_Limit : $sensor->Humid_Lower_Limit,
+                ];
+            }
+
+            return response()->json(['data' => $data], 200);
+
+        } catch (Throwable $e) {
+            Log::error('SensorLimitController::batchShow failed', [
+                'areaIds' => $request->query('areaIds'),
+                'error'   => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Failed to fetch sensor limits.'], 500);
+        }
+    }
+
+    /**
      * POST /api/temphumid/sensors/{areaId}/limits
      * Inserts a new row into TempHumid_Limits_Log for a single sensor.
      * Trigger updates Temp_Logger_Chip_ID automatically.

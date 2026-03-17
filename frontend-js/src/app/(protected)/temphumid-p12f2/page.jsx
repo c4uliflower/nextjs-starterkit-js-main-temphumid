@@ -379,20 +379,30 @@ export default function P1and2F2MapPage() {
         if (hasLiveData(newSensors)) setLoading(false);
 
 
-        // Fetch limits once on first load — modal reads from limitsCache, no fetch on open
+        // Fetch limits once on first load — one request for all sensors (batch-show)
         if (Object.keys(limitsCache).length === 0) {
-          const entries = await Promise.all(
-            MAP_SENSORS.map(async (sensor) => {
-              try {
-                const res = await axios.get(`${API_BASE}/sensors/${sensor.areaId}/limits`);
-                const d   = res.data.data;
-                return [sensor.id, { tempUL: d.tempUL, tempLL: d.tempLL, humidUL: d.humidUL, humidLL: d.humidLL }];
-              } catch {
-                return [sensor.id, { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
-              }
-            })
-          );
-          limitsCache = Object.fromEntries(entries);
+          try {
+            const areaIds = ALL_EDITABLE_SENSORS.map(s => {
+              const src = MAP_SENSORS.find(m => m.id === s.id) ?? (typeof DESSICATOR_SENSORS !== 'undefined' ? DESSICATOR_SENSORS.find(m => m.id === s.id) : null);
+              return src?.areaId;
+            }).filter(Boolean);
+            const res = await axios.get(`${API_BASE}/sensors/limits/batch-show`, {
+              params: { areaIds },
+              paramsSerializer: (p) => p.areaIds.map(id => `areaIds[]=${encodeURIComponent(id)}`).join('&'),
+            });
+            const byAreaId = res.data.data; // { [areaId]: { tempUL, tempLL, humidUL, humidLL } }
+            const entries = ALL_EDITABLE_SENSORS.map(s => {
+              const src = MAP_SENSORS.find(m => m.id === s.id) ?? (typeof DESSICATOR_SENSORS !== 'undefined' ? DESSICATOR_SENSORS.find(m => m.id === s.id) : null);
+              const lim = src ? byAreaId[src.areaId] : null;
+              return [s.id, lim ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
+            });
+            limitsCache = Object.fromEntries(entries);
+          } catch {
+            // fallback: populate with defaults so button still becomes ready
+            limitsCache = Object.fromEntries(
+              ALL_EDITABLE_SENSORS.map(s => [s.id, { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }])
+            );
+          }
           setLimitsReady(true);
         }
 
