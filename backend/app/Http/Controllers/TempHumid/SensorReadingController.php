@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Throwable;
 
 class SensorReadingController extends Controller
@@ -25,12 +26,11 @@ class SensorReadingController extends Controller
     /**
      * Determine aggregation resolution based on day range.
      *
-     * ≤ 2 days  → raw        (every row, ~5s intervals)
+     * ≤ 3 days  → raw        (every row, ~5s intervals)
+     * ≤ 7 days  → thirty_min (1 point per 30 minutes)
      * ≤ 14 days → hourly     (1 point per hour)
      * ≤ 90 days → six_hour   (1 point per 6 hours)
      * >  90 days → daily     (1 point per day)
-     *
-     * @return array{ resolution: string, bucketSql: string, labelSql: string }
      */
     private function resolveAggregation(string $from, string $to): array
     {
@@ -38,46 +38,27 @@ class SensorReadingController extends Controller
             (strtotime($to) - strtotime($from)) / 86400
         );
 
-        if ($days <= 2) {
-            return [
-                'resolution' => 'raw',
-                'days'       => $days,
-            ];
+        if ($days <= 3) {
+            return ['resolution' => 'raw', 'days' => $days];
+        }
+
+        if ($days <= 7) {
+            return ['resolution' => 'thirty_min', 'days' => $days];
         }
 
         if ($days <= 14) {
-            return [
-                'resolution' => 'hourly',
-                'days'       => $days,
-            ];
+            return ['resolution' => 'hourly', 'days' => $days];
         }
 
         if ($days <= 90) {
-            return [
-                'resolution' => 'six_hour',
-                'days'       => $days,
-            ];
+            return ['resolution' => 'six_hour', 'days' => $days];
         }
 
-        return [
-            'resolution' => 'daily',
-            'days'       => $days,
-        ];
+        return ['resolution' => 'daily', 'days' => $days];
     }
 
     /**
      * Fetch historically accurate limits for a set of areaIds over a date range.
-     *
-     * For each areaId, returns all limit rows from TempHumid_Limits_Log where
-     * changed_at falls within or before the requested range, ordered ascending.
-     * The caller uses this to find "what were the limits at time T" by walking
-     * the list and picking the latest row where changed_at <= T.
-     *
-     * Returns: array<string, array<object>>  areaId → array of limit rows (asc by changed_at, ID)
-     *
-     * @param  string[]  $areaIds
-     * @param  string    $from   e.g. '2026-02-28 00:00:00'
-     * @param  string    $to     e.g. '2026-03-06 23:59:59.999'
      */
     private function fetchLimitsHistory(array $areaIds, string $from, string $to): array
     {
@@ -85,8 +66,6 @@ class SensorReadingController extends Controller
             return [];
         }
 
-        // Fetch all rows changed_at <= $to so we can resolve limits at any
-        // point in the range. Rows after $to are irrelevant.
         $rows = DB::connection('temphumid')
             ->table('TempHumid_Limits_Log')
             ->whereIn('Area ID', $areaIds)
@@ -107,13 +86,6 @@ class SensorReadingController extends Controller
     /**
      * Given an ordered list of limit rows (asc by changed_at) for one sensor,
      * return the limits that were active at $dayTime.
-     *
-     * Walks the list and returns the last row where changed_at <= $dayTime.
-     * Falls back to the earliest row if none match (reading predates all changes).
-     *
-     * @param  object[]  $limitRows   Ordered asc by changed_at
-     * @param  string    $dayTime     Reading timestamp
-     * @return object|null
      */
     private function resolveLimitsAtTime(array $limitRows, string $dayTime): ?object
     {
@@ -121,13 +93,13 @@ class SensorReadingController extends Controller
             return null;
         }
 
-        $resolved = $limitRows[0]; // fallback: earliest known limits
+        $resolved = $limitRows[0];
 
         foreach ($limitRows as $row) {
             if ($row->changed_at <= $dayTime) {
                 $resolved = $row;
             } else {
-                break; // rows are sorted asc, no need to continue
+                break;
             }
         }
 
@@ -136,15 +108,6 @@ class SensorReadingController extends Controller
 
     /**
      * GET /api/temphumid/sensors/{areaId}/readings/history
-     * Returns historical readings for a single sensor within a date range.
-     * Reads from TempHumid_Calib_Log — values already corrected, no offset math.
-     * Limits attached to each reading reflect what was active at that point in
-     * time, resolved from TempHumid_Limits_Log.
-     * Used by: dashboard daily chart page.
-     *
-     * Query params:
-     *   ?from=2026-02-28   (required, Y-m-d)
-     *   ?to=2026-03-06     (required, Y-m-d)
      */
     public function history(Request $request, string $areaId): JsonResponse
     {
@@ -179,11 +142,8 @@ class SensorReadingController extends Controller
                 ->orderBy('Day_Time')
                 ->get(['Day_Time', 'Temperature', 'Humidity', 'Heat Index']);
 
-            // Fetch historically accurate limits for this sensor
-            $limitsHistory = $this->fetchLimitsHistory([$areaId], $from, $to);
-            $limitRows     = $limitsHistory[$areaId] ?? [];
-
-            // Fallback limits from Temp_Logger_Chip_ID if no log entry exists
+            $limitsHistory  = $this->fetchLimitsHistory([$areaId], $from, $to);
+            $limitRows      = $limitsHistory[$areaId] ?? [];
             $fallbackLimits = (object) [
                 'Temp_Upper_Limit'  => $sensor->Temp_Upper_Limit,
                 'Temp_Lower_Limit'  => $sensor->Temp_Lower_Limit,
@@ -192,30 +152,20 @@ class SensorReadingController extends Controller
             ];
 
             $data = $rows->map(function ($row) use ($limitRows, $fallbackLimits) {
-                $lim     = $this->resolveLimitsAtTime($limitRows, $row->Day_Time) ?? $fallbackLimits;
-                $tempUL  = $lim->Temp_Upper_Limit;
-                $tempLL  = $lim->Temp_Lower_Limit;
-                $humidUL = $lim->Humid_Upper_Limit;
-                $humidLL = $lim->Humid_Lower_Limit;
-
+                $lim = $this->resolveLimitsAtTime($limitRows, $row->Day_Time) ?? $fallbackLimits;
                 return [
                     'dayTime'     => $row->Day_Time,
                     'temperature' => round((float) $row->Temperature, 2),
                     'humidity'    => round((float) $row->Humidity,    2),
-                    'heatIndex'   => $row->{'Heat Index'} !== null
-                                        ? round((float) $row->{'Heat Index'}, 2)
-                                        : null,
-                    'tempUL'      => $tempUL,
-                    'tempLL'      => $tempLL,
-                    'humidUL'     => $humidUL,
-                    'humidLL'     => $humidLL,
+                    'heatIndex'   => $row->{'Heat Index'} !== null ? round((float) $row->{'Heat Index'}, 2) : null,
+                    'tempUL'      => $lim->Temp_Upper_Limit,
+                    'tempLL'      => $lim->Temp_Lower_Limit,
+                    'humidUL'     => $lim->Humid_Upper_Limit,
+                    'humidLL'     => $lim->Humid_Lower_Limit,
                 ];
             });
 
-            // Resolve current limits (latest row) for meta
-            $currentLim = ! empty($limitRows)
-                ? end($limitRows)
-                : $fallbackLimits;
+            $currentLim = ! empty($limitRows) ? end($limitRows) : $fallbackLimits;
 
             return response()->json([
                 'data' => $data,
@@ -236,30 +186,13 @@ class SensorReadingController extends Controller
             ], 200);
 
         } catch (Throwable $e) {
-            Log::error('SensorReadingController::history failed', [
-                'areaId' => $areaId,
-                'error'  => $e->getMessage(),
-            ]);
+            Log::error('SensorReadingController::history failed', ['areaId' => $areaId, 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to fetch sensor history.'], 500);
         }
     }
 
     /**
      * GET /api/temphumid/sensors/readings/history/batch
-     * Returns historical readings for multiple sensors in one request.
-     * Automatically aggregates based on date range to prevent timeouts.
-     * Limits attached to each sensor reflect historically accurate values
-     * resolved from TempHumid_Limits_Log per sensor.
-     *
-     *   ≤ 2 days  → raw rows     (~5s intervals, full detail)
-     *   ≤ 14 days → hourly avg   (1 point per hour per sensor)
-     *   ≤ 90 days → 6-hour avg   (4 points per day per sensor)
-     *   > 90 days → daily avg    (1 point per day per sensor)
-     *
-     * Query params:
-     *   ?areaIds[]=P1F1-04&areaIds[]=P1F1-02   (required, at least one)
-     *   ?from=2026-02-28                         (required, Y-m-d)
-     *   ?to=2026-03-06                           (required, Y-m-d)
      */
     public function batchHistory(Request $request): JsonResponse
     {
@@ -277,11 +210,9 @@ class SensorReadingController extends Controller
             $from    = $fromRaw . ' 00:00:00';
             $to      = $toRaw   . ' 23:59:59.999';
 
-            // ── Determine aggregation resolution ─────────────────────────────
             $agg        = $this->resolveAggregation($fromRaw, $toRaw);
             $resolution = $agg['resolution'];
 
-            // ── Step 1: Fetch all requested sensors in one query ──────────────
             $sensors = DB::connection('temphumid')
                 ->table('Temp_Logger_Chip_ID')
                 ->whereIn('Area ID', $areaIds)
@@ -291,7 +222,6 @@ class SensorReadingController extends Controller
                 return response()->json(['message' => 'No sensors found for the given areaIds.'], 404);
             }
 
-            // Build lookup: normalized chipId → areaId
             $chipIds    = [];
             $chipToArea = [];
             foreach ($sensors as $sensor) {
@@ -300,21 +230,13 @@ class SensorReadingController extends Controller
                 $chipToArea[$normalized] = $sensor->{'Area ID'};
             }
 
-            // ── Step 2: Fetch historically accurate limits for all sensors ────
-            // One query for all areaIds — keyed by areaId → ordered limit rows
             $limitsHistory = $this->fetchLimitsHistory($areaIds, $from, $to);
 
-            // ── Step 3: Pre-seed result with current (latest) limits ──────────
-            // meta.limits reflects what's active now, not per-reading
             $result = [];
             foreach ($sensors as $sensor) {
-                $areaId    = $sensor->{'Area ID'};
-                $limitRows = $limitsHistory[$areaId] ?? [];
-
-                // Latest known limits for this sensor
-                $currentLim = ! empty($limitRows)
-                    ? end($limitRows)
-                    : null;
+                $areaId     = $sensor->{'Area ID'};
+                $limitRows  = $limitsHistory[$areaId] ?? [];
+                $currentLim = ! empty($limitRows) ? end($limitRows) : null;
 
                 $result[$areaId] = [
                     'lineName' => $sensor->{'Line Name'},
@@ -328,7 +250,8 @@ class SensorReadingController extends Controller
                 ];
             }
 
-            // ── Step 4: Fetch readings — raw or aggregated ───────────────────
+            $totalReadings = 0;
+
             if ($resolution === 'raw') {
                 $rows = DB::connection('temphumid')
                     ->table('TempHumid_Calib_Log')
@@ -340,7 +263,6 @@ class SensorReadingController extends Controller
                     ->orderBy('Day_Time')
                     ->get(['Chip ID', 'Day_Time', 'Temperature', 'Humidity', 'Heat Index']);
 
-                $totalReadings = 0;
                 foreach ($rows as $row) {
                     $normalized = $this->normalizeChipId($row->{'Chip ID'});
                     $areaId     = $chipToArea[$normalized] ?? null;
@@ -361,9 +283,7 @@ class SensorReadingController extends Controller
                         'dayTime'     => $row->Day_Time,
                         'temperature' => round((float) $row->Temperature, 2),
                         'humidity'    => round((float) $row->Humidity,    2),
-                        'heatIndex'   => $row->{'Heat Index'} !== null
-                                            ? round((float) $row->{'Heat Index'}, 2)
-                                            : null,
+                        'heatIndex'   => $row->{'Heat Index'} !== null ? round((float) $row->{'Heat Index'}, 2) : null,
                         'tempUL'      => $lim->Temp_Upper_Limit,
                         'tempLL'      => $lim->Temp_Lower_Limit,
                         'humidUL'     => $lim->Humid_Upper_Limit,
@@ -373,16 +293,15 @@ class SensorReadingController extends Controller
                 }
 
             } else {
-                // Aggregated: GROUP BY time bucket using SQL Server DATEADD/DATEDIFF
                 $bucketExpr = match ($resolution) {
-                    'hourly'   => "DATEADD(hour,  DATEDIFF(hour,  0, [Day_Time]), 0)",
-                    'six_hour' => "DATEADD(hour,  (DATEDIFF(hour,  0, [Day_Time]) / 6)  * 6, 0)",
-                    'daily'    => "DATEADD(day,   DATEDIFF(day,   0, [Day_Time]), 0)",
-                    default    => "DATEADD(day,   DATEDIFF(day,   0, [Day_Time]), 0)",
+                    'thirty_min' => "DATEADD(minute, (DATEDIFF(minute, 0, [Day_Time]) / 30) * 30, 0)",
+                    'hourly'     => "DATEADD(hour,  DATEDIFF(hour,  0, [Day_Time]), 0)",
+                    'six_hour'   => "DATEADD(hour,  (DATEDIFF(hour,  0, [Day_Time]) / 6) * 6, 0)",
+                    'daily'      => "DATEADD(day,   DATEDIFF(day,   0, [Day_Time]), 0)",
+                    default      => "DATEADD(day,   DATEDIFF(day,   0, [Day_Time]), 0)",
                 };
 
                 $placeholders = implode(',', array_fill(0, count($chipIds), '?'));
-
                 $sql = "
                     SELECT
                         [Chip ID],
@@ -403,14 +322,11 @@ class SensorReadingController extends Controller
                 $bindings = array_merge($chipIds, [$from, $to]);
                 $rows     = DB::connection('temphumid')->select($sql, $bindings);
 
-                $totalReadings = 0;
                 foreach ($rows as $row) {
                     $normalized = $this->normalizeChipId($row->{'Chip ID'});
                     $areaId     = $chipToArea[$normalized] ?? null;
                     if ($areaId === null) continue;
 
-                    // For aggregated buckets, resolve limits at the bucket timestamp.
-                    // The bucket is the start of the period so this is accurate.
                     $limitRows = $limitsHistory[$areaId] ?? [];
                     $sensor    = $sensors->firstWhere('Area ID', $areaId);
                     $fallback  = (object) [
@@ -426,9 +342,7 @@ class SensorReadingController extends Controller
                         'dayTime'     => $row->bucket,
                         'temperature' => round((float) $row->Temperature, 2),
                         'humidity'    => round((float) $row->Humidity,    2),
-                        'heatIndex'   => $row->{'Heat Index'} !== null
-                                            ? round((float) $row->{'Heat Index'}, 2)
-                                            : null,
+                        'heatIndex'   => $row->{'Heat Index'} !== null ? round((float) $row->{'Heat Index'}, 2) : null,
                         'tempUL'      => $lim->Temp_Upper_Limit,
                         'tempLL'      => $lim->Temp_Lower_Limit,
                         'humidUL'     => $lim->Humid_Upper_Limit,
@@ -450,11 +364,191 @@ class SensorReadingController extends Controller
             ], 200);
 
         } catch (Throwable $e) {
-            Log::error('SensorReadingController::batchHistory failed', [
-                'areaIds' => $request->query('areaIds'),
-                'error'   => $e->getMessage(),
-            ]);
+            Log::error('SensorReadingController::batchHistory failed', ['areaIds' => $request->query('areaIds'), 'error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to fetch batch sensor history.'], 500);
         }
+    }
+
+    /**
+     * GET /api/temphumid/sensors/readings/export
+     *
+     * Streams ALL raw readings for the requested sensors and date range as
+     * newline-delimited JSON (NDJSON). NEVER aggregates — always every row
+     * from TempHumid_Calib_Log regardless of how large the date range is.
+     *
+     * Used exclusively by the dashboard Export button. Completely bypasses
+     * resolveAggregation() so the user always gets every individual reading.
+     *
+     * Uses cursor() to iterate one DB row at a time — PHP memory stays flat
+     * even for year-long exports with millions of rows.
+     *
+     * NDJSON protocol (one JSON object per newline):
+     *
+     *   Line 1 — metadata:
+     *     {"type":"meta","from":"2025-01-01","to":"2025-12-31","sensors":[
+     *       {"areaId":"P1F1-02","lineName":"SMT","limits":{"tempUL":28,"tempLL":22,"humidUL":85,"humidLL":45}},
+     *       ...
+     *     ]}
+     *
+     *   Data lines (one per reading):
+     *     {"type":"row","areaId":"P1F1-02","dayTime":"2025-03-20 08:00:01",
+     *      "temperature":24.5,"humidity":60.2,"heatIndex":null,
+     *      "tempUL":28,"tempLL":22,"humidUL":85,"humidLL":45}
+     *
+     *   Final line:
+     *     {"type":"end","totalRows":1823456}
+     *
+     * Register BEFORE the {areaId} route in routes/api.php:
+     *   Route::get('sensors/readings/export', [SensorReadingController::class, 'exportRaw']);
+     *
+     * Query params:
+     *   ?areaIds[]=P1F1-04&areaIds[]=P1F1-02   (required, at least one)
+     *   ?from=2025-01-01                         (required, Y-m-d)
+     *   ?to=2025-12-31                           (required, Y-m-d)
+     */
+    public function exportRaw(Request $request): StreamedResponse
+    {
+        $request->validate([
+            'areaIds'   => ['required', 'array', 'min:1'],
+            'areaIds.*' => ['required', 'string'],
+            'from'      => ['required', 'date_format:Y-m-d'],
+            'to'        => ['required', 'date_format:Y-m-d', 'after_or_equal:from'],
+        ]);
+
+        $areaIds = $request->query('areaIds');
+        $fromRaw = $request->query('from');
+        $toRaw   = $request->query('to');
+        $from    = $fromRaw . ' 00:00:00';
+        $to      = $toRaw   . ' 23:59:59.999';
+
+        return response()->stream(function () use ($areaIds, $from, $to, $fromRaw, $toRaw) {
+            try {
+                // ── Fetch sensors ─────────────────────────────────────────────
+                $sensors = DB::connection('temphumid')
+                    ->table('Temp_Logger_Chip_ID')
+                    ->whereIn('Area ID', $areaIds)
+                    ->get();
+
+                if ($sensors->isEmpty()) {
+                    echo json_encode(['type' => 'error', 'message' => 'No sensors found.']) . "\n";
+                    flush();
+                    return;
+                }
+
+                // Build lookups
+                $chipIds    = [];
+                $chipToArea = [];
+                foreach ($sensors as $sensor) {
+                    $normalized              = $this->normalizeChipId($sensor->{'Chip ID'});
+                    $chipIds[]               = $normalized;
+                    $chipToArea[$normalized] = $sensor->{'Area ID'};
+                }
+
+                // ── Fetch limits history ──────────────────────────────────────
+                $limitsHistory = $this->fetchLimitsHistory($areaIds, $from, $to);
+
+                // Build per-sensor meta (current limits + fallback for resolveLimitsAtTime)
+                $sensorMeta = [];
+                foreach ($sensors as $sensor) {
+                    $areaId     = $sensor->{'Area ID'};
+                    $limitRows  = $limitsHistory[$areaId] ?? [];
+                    $currentLim = ! empty($limitRows) ? end($limitRows) : null;
+
+                    $sensorMeta[$areaId] = [
+                        'areaId'    => $areaId,
+                        'lineName'  => $sensor->{'Line Name'},
+                        'limits'    => [
+                            'tempUL'  => $currentLim ? $currentLim->Temp_Upper_Limit  : $sensor->Temp_Upper_Limit,
+                            'tempLL'  => $currentLim ? $currentLim->Temp_Lower_Limit  : $sensor->Temp_Lower_Limit,
+                            'humidUL' => $currentLim ? $currentLim->Humid_Upper_Limit : $sensor->Humid_Upper_Limit,
+                            'humidLL' => $currentLim ? $currentLim->Humid_Lower_Limit : $sensor->Humid_Lower_Limit,
+                        ],
+                        '_fallback' => (object) [
+                            'Temp_Upper_Limit'  => $sensor->Temp_Upper_Limit,
+                            'Temp_Lower_Limit'  => $sensor->Temp_Lower_Limit,
+                            'Humid_Upper_Limit' => $sensor->Humid_Upper_Limit,
+                            'Humid_Lower_Limit' => $sensor->Humid_Lower_Limit,
+                        ],
+                    ];
+                }
+
+                // ── Stream metadata line ──────────────────────────────────────
+                $metaSensors = array_map(
+                    fn ($m) => ['areaId' => $m['areaId'], 'lineName' => $m['lineName'], 'limits' => $m['limits']],
+                    array_values($sensorMeta)
+                );
+
+                echo json_encode([
+                    'type'    => 'meta',
+                    'from'    => $fromRaw,
+                    'to'      => $toRaw,
+                    'sensors' => $metaSensors,
+                ]) . "\n";
+                flush();
+
+                // ── Stream raw rows via cursor() ──────────────────────────────
+                // cursor() is a lazy generator — fetches one row at a time from
+                // the PDO driver so 10M rows won't exhaust PHP memory.
+                $cursor = DB::connection('temphumid')
+                    ->table('TempHumid_Calib_Log')
+                    ->whereIn('Chip ID', $chipIds)
+                    ->where('Day_Time', '>=', $from)
+                    ->where('Day_Time', '<=', $to)
+                    ->whereNotNull('Temperature')
+                    ->whereNotNull('Humidity')
+                    ->orderBy('Chip ID')
+                    ->orderBy('Day_Time')
+                    ->select(['Chip ID', 'Day_Time', 'Temperature', 'Humidity', 'Heat Index'])
+                    ->cursor();
+
+                $totalRows  = 0;
+                $flushEvery = 500; // push buffered output to the client every N rows
+
+                foreach ($cursor as $row) {
+                    $normalized = $this->normalizeChipId($row->{'Chip ID'});
+                    $areaId     = $chipToArea[$normalized] ?? null;
+                    if ($areaId === null) continue;
+
+                    $meta      = $sensorMeta[$areaId];
+                    $limitRows = $limitsHistory[$areaId] ?? [];
+                    $lim       = $this->resolveLimitsAtTime($limitRows, $row->Day_Time) ?? $meta['_fallback'];
+
+                    echo json_encode([
+                        'type'        => 'row',
+                        'areaId'      => $areaId,
+                        'dayTime'     => $row->Day_Time,
+                        'temperature' => round((float) $row->Temperature, 2),
+                        'humidity'    => round((float) $row->Humidity,    2),
+                        'heatIndex'   => $row->{'Heat Index'} !== null
+                                            ? round((float) $row->{'Heat Index'}, 2)
+                                            : null,
+                        'tempUL'      => $lim->Temp_Upper_Limit,
+                        'tempLL'      => $lim->Temp_Lower_Limit,
+                        'humidUL'     => $lim->Humid_Upper_Limit,
+                        'humidLL'     => $lim->Humid_Lower_Limit,
+                    ]) . "\n";
+
+                    $totalRows++;
+
+                    if ($totalRows % $flushEvery === 0) {
+                        flush();
+                    }
+                }
+
+                // ── End marker ────────────────────────────────────────────────
+                echo json_encode(['type' => 'end', 'totalRows' => $totalRows]) . "\n";
+                flush();
+
+            } catch (Throwable $e) {
+                Log::error('SensorReadingController::exportRaw failed', ['error' => $e->getMessage()]);
+                echo json_encode(['type' => 'error', 'message' => 'Export failed: ' . $e->getMessage()]) . "\n";
+                flush();
+            }
+        }, 200, [
+            'Content-Type'        => 'application/x-ndjson',
+            'X-Accel-Buffering'   => 'no',   // disable Nginx proxy buffering
+            'Cache-Control'       => 'no-cache',
+            'Transfer-Encoding'   => 'chunked',
+        ]);
     }
 }

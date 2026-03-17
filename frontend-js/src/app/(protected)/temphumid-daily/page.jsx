@@ -4,7 +4,7 @@
 // IMPORTS
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, useRef, useEffect, useCallback, memo } from "react";
-import { Droplets, Thermometer, TriangleAlert, Radio, FileText } from "lucide-react";
+import { Droplets, Thermometer, TriangleAlert, Radio, FileText, Download } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { DashboardCard } from "@/components/custom/DashboardCard";
 import { DateRangePicker } from "@/components/ui/date-picker";
@@ -18,13 +18,8 @@ import axios from "@/lib/axios";
 
 const API_BASE = '/api/temphumid';
 
-// Module-level cache — persists across page navigations, cleared only on full reload
 let summaryCache = null;
 
-/**
- * SENSOR_MAP — keyed by location label, values use real areaIds from DB.
- * These areaIds are passed directly to the backend for lookup in Temp_Logger_Chip_ID.
- */
 const SENSOR_MAP = {
   "Cold Storage": [
     { id: "P1F1-10", name: "SMT - Cold Storage"       },
@@ -84,13 +79,9 @@ const SENSOR_MAP = {
   ],
 };
 
-// Flat list of all locations
 const ALL_LOCATIONS = Object.keys(SENSOR_MAP);
+const ALL_SENSORS   = Object.values(SENSOR_MAP).flat();
 
-// Flat list of all sensors across all locations
-const ALL_SENSORS = Object.values(SENSOR_MAP).flat();
-
-// Lookup: sensorId (areaId) → location name
 const SENSOR_LOCATION_MAP = {};
 Object.entries(SENSOR_MAP).forEach(([loc, sensors]) => {
   sensors.forEach((s) => { SENSOR_LOCATION_MAP[s.id] = loc; });
@@ -118,13 +109,12 @@ function getDefault24hRange() {
 }
 
 const toISODate = (d) => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const y   = d.getFullYear();
+  const m   = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
 };
 
-// Average an array of nullable numbers
 const avg = (arr) => {
   const valid = arr.filter(v => v != null);
   return valid.length ? valid.reduce((s, v) => s + v, 0) / valid.length : null;
@@ -133,31 +123,34 @@ const avg = (arr) => {
 /**
  * Format a dayTime string for chart X axis labels based on resolution.
  *
- * raw / hourly  → "MM/DD HH:mm"
- * six_hour      → "MM/DD HH:mm"
- * daily         → "MM/DD/YYYY"
- * monthly       → "Mon YYYY"  (client-side monthly view toggle)
+ * raw / thirty_min / hourly / six_hour → "MM/DD HH:mm"
+ * daily                                → "MM/DD/YYYY"
+ * monthly                              → "Mon YYYY"
  */
 function formatLabel(isoString, resolution) {
   const d = new Date(isoString);
   if (isNaN(d)) return isoString;
 
   if (resolution === "daily") {
-    return d.toLocaleString("en-PH", {
-      month: "2-digit", day: "2-digit", year: "numeric",
-    });
+    return d.toLocaleString("en-PH", { month: "2-digit", day: "2-digit", year: "numeric" });
   }
-
   if (resolution === "monthly") {
     return d.toLocaleString("en-PH", { month: "short", year: "numeric" });
   }
-
-  // raw, hourly, six_hour — show date + time
   return d.toLocaleString("en-PH", {
-    month: "2-digit", day: "2-digit",
-    hour: "2-digit", minute: "2-digit", hour12: false,
+    month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
   });
 }
+
+/**
+ * Normalise a backend dayTime string → "YYYY-MM-DD HH:mm:ss".
+ * Written as { t:"s" } in SheetJS so Excel never auto-converts it to a
+ * serial date number and strips the time portion.
+ */
+const fmtDatetime = (t) => {
+  if (!t) return "";
+  return t.replace("T", " ").replace(/\.\d+([+-]\d{2}:\d{2}|Z)?$/, "").trim();
+};
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -214,15 +207,11 @@ function useChartJS() {
 
 const StatCards = memo(function StatCards({ onFirstLoad }) {
   const [summary, setSummary] = useState(summaryCache ?? {
-    avgTemperature:    null,
-    avgHumidity:       null,
-    activeSensorCount: null,
-    breachCount:       null,
+    avgTemperature: null, avgHumidity: null, activeSensorCount: null, breachCount: null,
   });
 
   useEffect(() => {
     let isFirst = !summaryCache;
-
     const fetchSummary = async () => {
       try {
         const res = await axios.get(`${API_BASE}/dashboard/summary`);
@@ -231,15 +220,10 @@ const StatCards = memo(function StatCards({ onFirstLoad }) {
       } catch (err) {
         console.error("Failed to fetch dashboard summary:", err);
       } finally {
-        if (isFirst) {
-          isFirst = false;
-          onFirstLoad?.();
-        }
+        if (isFirst) { isFirst = false; onFirstLoad?.(); }
       }
     };
-
     if (summaryCache) onFirstLoad?.();
-
     fetchSummary();
     const interval = setInterval(fetchSummary, 30_000);
     return () => clearInterval(interval);
@@ -368,68 +352,129 @@ const toSensorOptions = (sensors) =>
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 8: VIEW BUILDERS
-// resolution is now passed in so labels format correctly per tier.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Build chart datasets from raw API data.
- * resolution controls how X axis timestamps are formatted.
- */
 function buildDailyDatasets(rawData, resolution = "raw") {
   const { sortedTimes, perSensor } = rawData;
-
   const labels = sortedTimes.map(t => formatLabel(t, resolution));
-
   const base = ({ color, label }) => ({
     label, borderColor: color, backgroundColor: color + "22",
     borderWidth: 2, pointRadius: resolution === "raw" ? 0 : 2,
     tension: 0.3, fill: false, spanGaps: true,
   });
-
   const tempDS  = perSensor.map(s => ({ ...base(s), data: sortedTimes.map(t => s.readingMap[t]?.temperature ?? null) }));
   const humidDS = perSensor.map(s => ({ ...base(s), data: sortedTimes.map(t => s.readingMap[t]?.humidity    ?? null) }));
-
   return { labels, tempDS, humidDS };
 }
 
 function buildMonthlyDatasets(rawData) {
   const { sortedTimes, perSensor } = rawData;
-
   const months = [...new Set(sortedTimes.map(t => t.slice(0, 7)))].sort();
-
   const labels = months.map(m => {
     const [y, mo] = m.split("-");
-    return new Date(Number(y), Number(mo) - 1, 1)
-      .toLocaleString("en-PH", { month: "short", year: "numeric" });
+    return new Date(Number(y), Number(mo) - 1, 1).toLocaleString("en-PH", { month: "short", year: "numeric" });
   });
-
   const base = ({ color, label }) => ({
     label, borderColor: color, backgroundColor: color + "22",
     borderWidth: 2, pointRadius: 4, tension: 0.3, fill: false, spanGaps: true,
   });
-
   const avgForMonth = (readingMap, month, field) =>
     avg(sortedTimes.filter(t => t.startsWith(month)).map(t => readingMap[t]?.[field] ?? null));
-
   const tempDS  = perSensor.map(s => ({ ...base(s), data: months.map(m => avgForMonth(s.readingMap, m, "temperature")) }));
   const humidDS = perSensor.map(s => ({ ...base(s), data: months.map(m => avgForMonth(s.readingMap, m, "humidity"))    }));
-
   return { labels, tempDS, humidDS };
 }
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SECTION 8b: EXCEL EXPORT
+//
+// Exports whatever data the chart currently has loaded in rawDataRef.
+// Uses SheetJS loaded lazily. Handles large datasets by chunking row
+// writes to avoid blocking the UI.
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function loadSheetJS() {
+  if (window.XLSX) return window.XLSX;
+  await new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = res; s.onerror = rej;
+    document.head.appendChild(s);
+  });
+  return window.XLSX;
+}
+
+async function exportReadingsToExcel({ rawData, limitProfiles, rangeFrom, rangeTo }) {
+  const XLSX = await loadSheetJS();
+
+  const { sortedTimes, perSensor } = rawData;
+  const firstProfile = limitProfiles[0] ?? {};
+
+  const headers = [
+    "Date & Time",
+    ...perSensor.flatMap(s => [
+      `Temperature (${s.label})`,
+      `Humidity (${s.label})`,
+    ]),
+    "Temp Upper Limit",
+    "Temp Lower Limit",
+    "Humid Upper Limit",
+    "Humid Lower Limit",
+  ];
+
+  const CHUNK = 5000;
+  const rows  = [headers];
+
+  for (let i = 0; i < sortedTimes.length; i += CHUNK) {
+    const slice = sortedTimes.slice(i, i + CHUNK);
+    slice.forEach(t => {
+      const row = [{ v: fmtDatetime(t), t: "s" }];
+      perSensor.forEach(s => {
+        row.push(s.readingMap[t]?.temperature ?? "");
+        row.push(s.readingMap[t]?.humidity    ?? "");
+      });
+      row.push(
+        firstProfile.tempUL  ?? "",
+        firstProfile.tempLL  ?? "",
+        firstProfile.humidUL ?? "",
+        firstProfile.humidLL ?? "",
+      );
+      rows.push(row);
+    });
+    await new Promise(r => setTimeout(r, 0));
+  }
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+
+  ws["!cols"] = [
+    { wch: 24 },
+    ...perSensor.flatMap(() => [{ wch: 24 }, { wch: 20 }]),
+    { wch: 18 }, { wch: 18 }, { wch: 20 }, { wch: 20 },
+  ];
+  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Data");
+
+  const fromStr = toISODate(rangeFrom);
+  const toStr   = toISODate(rangeTo);
+  XLSX.writeFile(wb, `sensor_readings_${fromStr}_to_${toStr}.xlsx`);
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 9: RESOLUTION BADGE
-// Small pill shown below filters so the user knows what granularity they're seeing.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const RESOLUTION_META = {
   /*
-  raw:       { label: "Raw (~5s)",       color: "#435ebe" },
-  hourly:    { label: "Hourly avg",      color: "#198754" },
-  six_hour:  { label: "6-hour avg",      color: "#fd7e14" },
-  daily:     { label: "Daily avg",       color: "#6f42c1" },
-  monthly:   { label: "Monthly avg",     color: "#0dcaf0" },
+  raw:        { label: "Raw (~5s)",   color: "#435ebe" },
+  thirty_min: { label: "30-min avg",  color: "#0dcaf0" },
+  hourly:     { label: "Hourly avg",  color: "#198754" },
+  six_hour:   { label: "6-hour avg",  color: "#fd7e14" },
+  daily:      { label: "Daily avg",   color: "#6f42c1" },
+  monthly:    { label: "Monthly avg", color: "#6c757d" },
   */
 };
 
@@ -473,13 +518,14 @@ export default function Dashboard() {
   const [loading,       setLoading]       = useState(false);
   const [apiError,      setApiError]      = useState(null);
   const [noData,        setNoData]        = useState(false);
+  const [resolution,    setResolution]    = useState("raw");
 
-  // resolution returned by the backend — drives label formatting + badge
-  const [resolution, setResolution] = useState("raw");
+  // ── View toggle ─────────────────────────────────────────────────────────────
+  const [chartView, setChartView] = useState("daily");
+  const rawDataRef                = useRef(null);
 
-  // ── View toggle — "daily" | "monthly" ──────────────────────────────────────
-  const [chartView,  setChartView]  = useState("daily");
-  const rawDataRef                  = useRef(null);
+  // ── Export state ────────────────────────────────────────────────────────────
+  const [exporting, setExporting] = useState(false);
 
   // ── Derived selections ──────────────────────────────────────────────────────
   const selSensors   = ALL_SENSORS.filter((s) => selSensorValues.includes(s.id));
@@ -490,9 +536,7 @@ export default function Dashboard() {
     : ALL_SENSORS;
 
   const locationOptionsList = selSensorValues.length > 0
-    ? ALL_LOCATIONS.filter((loc) =>
-        selSensorValues.some((id) => SENSOR_LOCATION_MAP[id] === loc)
-      )
+    ? ALL_LOCATIONS.filter((loc) => selSensorValues.some((id) => SENSOR_LOCATION_MAP[id] === loc))
     : ALL_LOCATIONS;
 
   const sensorsToFetch = selSensors.length > 0
@@ -508,51 +552,56 @@ export default function Dashboard() {
       const validIds = newLocValues.flatMap((loc) => SENSOR_MAP[loc] ?? []).map((s) => s.id);
       setSelSensorValues((prev) => prev.filter((id) => validIds.includes(id)));
     }
-    setApplied(false);
-    setApiError(null);
-    setNoData(false);
+    setApplied(false); setApiError(null); setNoData(false);
   };
 
   const handleSensorChange = (newSensorIds) => {
     setSelSensorValues(newSensorIds);
     if (newSensorIds.length > 0) {
       const relevantLocs = [...new Set(newSensorIds.map((id) => SENSOR_LOCATION_MAP[id]))];
-      setSelLocationValues((prev) => {
-        if (prev.length === 0) return prev;
-        return prev.filter((loc) => relevantLocs.includes(loc));
-      });
+      setSelLocationValues((prev) => prev.length === 0 ? prev : prev.filter((loc) => relevantLocs.includes(loc)));
     }
-    setApplied(false);
-    setApiError(null);
-    setNoData(false);
+    setApplied(false); setApiError(null); setNoData(false);
   };
 
   const handleRangeChange = (newRange) => {
     setRange(newRange ?? getDefault24hRange());
-    setApplied(false);
-    setApiError(null);
-    setNoData(false);
+    setApplied(false); setApiError(null); setNoData(false);
   };
 
-  // ── Toggle handler — purely client-side, no fetch ──────────────────────────
+  // ── View toggle handler ─────────────────────────────────────────────────────
   const handleViewToggle = (view) => {
     if (view === chartView || !rawDataRef.current) return;
     const { labels: l, tempDS: t, humidDS: h } = view === "monthly"
       ? buildMonthlyDatasets(rawDataRef.current)
       : buildDailyDatasets(rawDataRef.current, resolution);
-    setLabels(l);
-    setTempDS(t);
-    setHumidDS(h);
+    setLabels(l); setTempDS(t); setHumidDS(h);
     setChartView(view);
     setChartKey(k => k + 1);
   };
 
-  // ── Apply — fetch batch history from backend ────────────────────────────────
+  // ── Export handler — exports exactly what the chart has loaded ──────────────
+  const handleExport = async () => {
+    if (!rawDataRef.current || !applied) return;
+    setExporting(true);
+    try {
+      await exportReadingsToExcel({
+        rawData:      rawDataRef.current,
+        limitProfiles,
+        rangeFrom:    range.from,
+        rangeTo:      range.to,
+      });
+    } catch (err) {
+      console.error("Export failed:", err);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ── Apply ───────────────────────────────────────────────────────────────────
   const handleApply = async () => {
     if (!canApply) return;
-    setLoading(true);
-    setApiError(null);
-    setNoData(false);
+    setLoading(true); setApiError(null); setNoData(false);
 
     try {
       const areaIds = sensorsToFetch.map((s) => s.id);
@@ -563,19 +612,15 @@ export default function Dashboard() {
         params: { areaIds, from, to },
         paramsSerializer: (params) => {
           const parts = [];
-          (params.areaIds ?? []).forEach((id) => {
-            parts.push(`areaIds[]=${encodeURIComponent(id)}`);
-          });
-          parts.push(`from=${params.from}`);
-          parts.push(`to=${params.to}`);
+          (params.areaIds ?? []).forEach((id) => { parts.push(`areaIds[]=${encodeURIComponent(id)}`); });
+          parts.push(`from=${params.from}`); parts.push(`to=${params.to}`);
           return parts.join("&");
         },
       });
 
-      const batchData  = res.data.data;
-      const serverRes  = res.data.meta?.resolution ?? "raw"; // ← resolution from backend
+      const batchData = res.data.data;
+      const serverRes = res.data.meta?.resolution ?? "raw";
 
-      // Build union of all timestamps across all sensors
       const allTimes = new Set();
       Object.values(batchData).forEach(({ readings }) => {
         readings.forEach(r => allTimes.add(r.dayTime));
@@ -583,13 +628,9 @@ export default function Dashboard() {
       const sortedTimes = [...allTimes].sort();
 
       if (sortedTimes.length === 0) {
-        setNoData(true);
-        setApplied(true);
-        setLoading(false);
-        return;
+        setNoData(true); setApplied(true); setLoading(false); return;
       }
 
-      // Build per-sensor reading maps
       const perSensor = [];
       sensorsToFetch.forEach((sensor, i) => {
         const entry = batchData[sensor.id];
@@ -603,7 +644,6 @@ export default function Dashboard() {
         });
       });
 
-      // Derive limit profiles grouped by location
       const locationLimitMap = {};
       sensorsToFetch.forEach((sensor) => {
         const entry = batchData[sensor.id];
@@ -621,40 +661,28 @@ export default function Dashboard() {
 
       rawDataRef.current = { sortedTimes, perSensor };
 
-      // Always start in daily view after a fresh Apply — use server resolution for labels
       const { labels: l, tempDS: t, humidDS: h } = buildDailyDatasets(rawDataRef.current, serverRes);
       setResolution(serverRes);
       setLimitProfiles(Object.values(locationLimitMap));
-      setLabels(l);
-      setTempDS(t);
-      setHumidDS(h);
+      setLabels(l); setTempDS(t); setHumidDS(h);
       setChartView("daily");
       setChartKey(k => k + 1);
       setApplied(true);
 
     } catch (err) {
       console.error("Failed to fetch batch history:", err);
-      setApiError(
-        err.response?.data?.message ?? "Failed to fetch sensor data. Please try again."
-      );
+      setApiError(err.response?.data?.message ?? "Failed to fetch sensor data. Please try again.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleClear = () => {
-    setSelLocationValues([]);
-    setSelSensorValues([]);
+    setSelLocationValues([]); setSelSensorValues([]);
     setRange(getDefault24hRange());
-    setTempDS([]);
-    setHumidDS([]);
-    setLabels([]);
-    setLimitProfiles([]);
-    setApplied(false);
-    setApiError(null);
-    setNoData(false);
-    setChartView("daily");
-    setResolution("raw");
+    setTempDS([]); setHumidDS([]); setLabels([]); setLimitProfiles([]);
+    setApplied(false); setApiError(null); setNoData(false);
+    setChartView("daily"); setResolution("raw");
     rawDataRef.current = null;
   };
 
@@ -668,7 +696,6 @@ export default function Dashboard() {
     return "Location narrows sensor options · Sensor narrows location options";
   })();
 
-  // Subtitle shown below each chart title — includes resolution context
   const chartSubtitle = (metric) => {
     const resLabel = RESOLUTION_META[chartView === "monthly" ? "monthly" : resolution]?.label ?? resolution;
     return `${metric} · ${resLabel} · Scroll to zoom · Click & drag to pan`;
@@ -696,6 +723,18 @@ export default function Dashboard() {
             <CardDescription>Select location, sensor and date range.</CardDescription>
           </div>
           <div className="flex gap-2 shrink-0">
+            {applied && !noData && !apiError && (
+              <Button
+                variant="outline"
+                size="default"
+                onClick={handleExport}
+                disabled={exporting}
+                className="cursor-pointer gap-1.5"
+              >
+                <Download className="w-4 h-4" />
+                {exporting ? "Exporting…" : "Export"}
+              </Button>
+            )}
             <Button variant="outline" size="default" onClick={handleClear} className="cursor-pointer">
               Clear
             </Button>
@@ -742,14 +781,12 @@ export default function Dashboard() {
           <div className="flex items-center gap-4 pt-3 pb-1">
             <p className="text-xs text-muted-foreground flex-1">{hintText}</p>
 
-            {/* Resolution badge — visible once data is applied */}
             {applied && !noData && !apiError && (
               <ResolutionBadge resolution={chartView === "monthly" ? "monthly" : resolution} />
             )}
 
-            {/* View toggle */}
             {applied && !noData && !apiError && (
-              <div style={{ display: "flex", alignItems: "center", gap: 2,border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>
                 {["daily", "monthly"].map((v) => (
                   <button
                     key={v}
@@ -758,7 +795,6 @@ export default function Dashboard() {
                       padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
                       fontSize: 12, fontWeight: chartView === v ? 600 : 400,
                       background: chartView === v ? "#fff" : "transparent",
-
                       boxShadow: chartView === v ? "0 1px 3px rgba(0,0,0,.10)" : "none",
                       transition: "all .15s",
                     }}
