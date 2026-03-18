@@ -336,6 +336,8 @@ function FloorModal({ floor, onClose }) {
   const isBreach    = floorStatus === "breach";
   const isAllGood   = floorStatus === "active";
 
+  // Cache filtered lists to avoid double filtering
+  const activeSensors = floor.sensors.filter(s => getSensorStatus(s) === "active");
   const flaggedSensors = floor.sensors
     .filter(s => getSensorStatus(s) !== "active")
     .sort((a, b) => STATUS_PRIORITY[getSensorStatus(a)] - STATUS_PRIORITY[getSensorStatus(b)]);
@@ -392,13 +394,13 @@ function FloorModal({ floor, onClose }) {
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: "#6c757d", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 12 }}>Sensor Flags</div>
                   {flaggedSensors.map((s, i) => <SensorStatusRow key={s.id} sensor={s} index={i} />)}
-                  {floor.sensors.filter(s => getSensorStatus(s) === "active").length > 0 && (
+                  {activeSensors.length > 0 && (
                     <>
                       <div style={{ fontSize: 11, fontWeight: 700, color: "#6c757d", textTransform: "uppercase", letterSpacing: ".08em", marginTop: 12, marginBottom: 8 }}>
-                        Active ({floor.sensors.filter(s => getSensorStatus(s) === "active").length})
+                        Active ({activeSensors.length})
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {floor.sensors.filter(s => getSensorStatus(s) === "active").map(s => (
+                        {activeSensors.map(s => (
                           <span key={s.id} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 5, background: "#e8fff8", color: "#198754", border: "1px solid #00c9a720", fontWeight: 500 }}>
                             {s.name}
                           </span>
@@ -579,9 +581,8 @@ export default function MonitoringPage() {
 
       } catch (err) {
         console.error("Failed to fetch monitoring data:", err);
-      } finally {
-        // Only clear loading on first load — subsequent polls don't show loading
       }
+      // No finally needed — loading state is managed by hasLiveData check
     };
 
     fetchAllFloors();
