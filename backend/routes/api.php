@@ -8,6 +8,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TempHumid\SensorController;
 use App\Http\Controllers\TempHumid\SensorLimitController;
 use App\Http\Controllers\TempHumid\SensorReadingController;
+use App\Http\Controllers\TempHumid\SensorStatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware(['auth:mat-auth'])->group(function () {
@@ -54,5 +55,7 @@ Route::middleware(['auth:mat-auth'])->group(function () {
         Route::post('/sensors/{areaId}/limits', [SensorLimitController::class, 'update']);
         Route::post('/sensors/limits/batch', [SensorLimitController::class, 'batchUpdate']);
         Route::get('sensors/limits/batch-show', [SensorLimitController::class, 'batchShow']);
+        Route::get('sensors/status',        [SensorStatusController::class, 'index']);
+        Route::post('sensors/status/batch', [SensorStatusController::class, 'batchUpdate']);
         });
 });

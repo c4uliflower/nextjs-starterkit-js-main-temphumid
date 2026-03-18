@@ -464,38 +464,7 @@ async function exportReadingsToExcel({ rawData, limitProfiles, rangeFrom, rangeT
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 9: RESOLUTION BADGE
-// ─────────────────────────────────────────────────────────────────────────────
-
-const RESOLUTION_META = {
-  /*
-  raw:        { label: "Raw (~5s)",   color: "#435ebe" },
-  thirty_min: { label: "30-min avg",  color: "#0dcaf0" },
-  hourly:     { label: "Hourly avg",  color: "#198754" },
-  six_hour:   { label: "6-hour avg",  color: "#fd7e14" },
-  daily:      { label: "Daily avg",   color: "#6f42c1" },
-  monthly:    { label: "Monthly avg", color: "#6c757d" },
-  */
-};
-
-function ResolutionBadge({ resolution }) {
-  const meta = RESOLUTION_META[resolution];
-  if (!meta) return null;
-  return (
-    <span style={{
-      fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 5,
-      background: meta.color + "18", color: meta.color,
-      border: `1px solid ${meta.color}40`,
-      letterSpacing: ".04em", textTransform: "uppercase",
-    }}>
-      {meta.label}
-    </span>
-  );
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION 10: MAIN PAGE
+// SECTION 9: MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function Dashboard() {
@@ -696,14 +665,17 @@ export default function Dashboard() {
     return "Location narrows sensor options · Sensor narrows location options";
   })();
 
+  // chartSubtitle currently shows the raw resolution key (e.g., "raw", "daily")
+  // because RESOLUTION_META was removed. Once we restore RESOLUTION_META with
+  // display labels, this will show proper labels.
   const chartSubtitle = (metric) => {
-    const resLabel = RESOLUTION_META[chartView === "monthly" ? "monthly" : resolution]?.label ?? resolution;
+    const resLabel = chartView === "monthly" ? "monthly" : resolution;
     return `${metric} · ${resLabel} · Scroll to zoom · Click & drag to pan`;
   };
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
   // RENDER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────────
   return (
     <div className="space-y-6 p-6">
 
@@ -780,10 +752,6 @@ export default function Dashboard() {
           {/* Legend row + Daily/Monthly toggle */}
           <div className="flex items-center gap-4 pt-3 pb-1">
             <p className="text-xs text-muted-foreground flex-1">{hintText}</p>
-
-            {applied && !noData && !apiError && (
-              <ResolutionBadge resolution={chartView === "monthly" ? "monthly" : resolution} />
-            )}
 
             {applied && !noData && !apiError && (
               <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>

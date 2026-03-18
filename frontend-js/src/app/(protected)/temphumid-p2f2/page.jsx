@@ -21,6 +21,7 @@ const INACTIVE_AREAS = new Set([
 // Module-level caches — persist across page navigations
 let mapSensorsCache = null;
 let limitsCache     = {};
+let statusCache     = {};
 
 // Static sensor registry for map markers — x/y are percentage positions on the floor plan image.
 // Live data (temp, humid, status, limits) is merged in from the API on each poll.
@@ -94,7 +95,7 @@ function LoadingOverlay() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3: SENSOR LIMITS MODAL CONTENT
+// SECTION 3A: SENSOR LIMITS MODAL CONTENT
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Reusable numeric input field used inside the limits modal.
@@ -292,6 +293,170 @@ function SensorLimitsContent({ onClose, sensors }) {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 3B: SENSOR STATUS MODAL CONTENT
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Animated toggle switch — blue when active, grey when inactive.
+function StatusToggle({ active, disabled, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      style={{
+        position: "relative", display: "inline-flex", alignItems: "center",
+        width: 40, height: 22, borderRadius: 11, border: "none",
+        cursor: disabled ? "default" : "pointer",
+        background: active ? "#435ebe" : "#dee2e6",
+        transition: "background .2s", flexShrink: 0,
+        opacity: disabled ? 0.6 : 1, padding: 0,
+      }}
+    >
+      <span style={{
+        position: "absolute", left: active ? 20 : 2, width: 18, height: 18,
+        borderRadius: "50%", background: "#fff",
+        boxShadow: "0 1px 3px rgba(0,0,0,.2)", transition: "left .2s",
+      }} />
+    </button>
+  );
+}
+
+// Modal content for managing sensor activity status (Active / Inactive).
+// Draft state is initialized from statusCache (pre-fetched on page load).
+// Only sensors with actual changes are sent to the API on save.
+function SensorStatusContent({ onClose, sensors, onSaved }) {  // 🆕 added onSaved prop
+  // draft: { [sensorId]: 'Active' | 'Inactive' }
+  const [draft,    setDraft]    = useState(() => ({ ...statusCache }));
+  const [saving,   setSaving]   = useState(false);
+  const [apiError, setApiError] = useState(null);
+
+  // Snapshot of statuses at modal open — used to diff against draft on save
+  const originalRef = useRef({ ...statusCache });
+
+  const isChanged  = id => draft[id] !== originalRef.current[id];
+  const changedIds = sensors.filter(s => isChanged(s.id)).map(s => s.id);
+  const hasChanges = changedIds.length > 0;
+
+  const toggleSensor = id => {
+    if (saving) return;
+    setDraft(prev => ({ ...prev, [id]: prev[id] === "Active" ? "Inactive" : "Active" }));
+    setApiError(null);
+  };
+
+  const handleSave = async () => {
+    if (!hasChanges) { onClose(); return; }
+    setSaving(true); setApiError(null);
+    try {
+      // Build payload using only changed sensors — same diff pattern as limits modal
+      const payload = {
+        sensors: changedIds.map(id => {
+          const sensor = sensors.find(s => s.id === id);
+          return { areaId: sensor.areaId, status: draft[id] };
+        }),
+      };
+      await axios.post(`${API_BASE}/sensors/status/batch`, payload);
+      // Update cache with saved values so modal re-opens with fresh state
+      changedIds.forEach(id => { statusCache[id] = draft[id]; });
+      onSaved?.(); // 🆕 Notify parent that statuses have been saved
+      onClose();
+    } catch (err) {
+      setApiError(err.message ?? "Something went wrong. Please try again.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const groups        = [...new Set(sensors.map(s => s.group))];
+  const activeCount   = sensors.filter(s => draft[s.id] === "Active").length;
+  const inactiveCount = sensors.filter(s => draft[s.id] === "Inactive").length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
+
+      {/* Header */}
+      <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid #e9ecef", flexShrink: 0 }}>
+        <p className="text-base font-semibold">Manage Sensor Status</p>
+        <p className="text-sm text-muted-foreground mt-0.5" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          Plant 2 Floor 2 · {activeCount} active, {inactiveCount} inactive
+          {hasChanges && !saving && (
+            <span style={{ fontSize: 11, fontWeight: 700, color: "#435ebe" }}>
+              {changedIds.length} unsaved change{changedIds.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </p>
+      </div>
+
+      {/* Sensor list — grouped by Sensors / Dessicators */}
+      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
+        {groups.map(group => {
+          const list = sensors.filter(s => s.group === group);
+          return (
+            <div key={group}>
+              {/* Group header */}
+              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest"
+                style={{ padding: "10px 20px 6px", borderBottom: "1px solid #f3f4f6" }}>
+                {group}
+              </div>
+              {list.map(({ id, name }) => {
+                const isActive = draft[id] === "Active";
+                const changed  = isChanged(id);
+                return (
+                  <div key={id}
+                    style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between",
+                      padding: "10px 20px", borderBottom: "1px solid #f9fafb",
+                      background: changed ? "rgba(67,94,190,.04)" : "transparent",
+                      transition: "background .1s",
+                    }}>
+                    {/* Left: status dot + name + changed badge */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <div style={{
+                        width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                        background: isActive ? "#00c9a7" : "#adb5bd",
+                      }} />
+                      <span style={{ fontSize: 13, fontWeight: changed ? 600 : 400 }}>{name}</span>
+                      {/* Orange label — unsaved change indicator */}
+                      {changed && (
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fd7e14", letterSpacing: ".04em" }}>
+                          CHANGED
+                        </span>
+                      )}
+                    </div>
+                    {/* Right: status label + toggle */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{
+                        fontSize: 11, fontWeight: 600,
+                        color: isActive ? "#00c9a7" : "#adb5bd",
+                        minWidth: 52, textAlign: "right",
+                      }}>
+                        {isActive ? "Active" : "Inactive"}
+                      </span>
+                      <StatusToggle active={isActive} disabled={saving} onToggle={() => toggleSensor(id)} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Modal footer */}
+      <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
+        {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
+        {apiError && (
+          <div style={{ marginRight: "auto", background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "6px 12px" }}
+            className="text-sm text-destructive">{apiError}</div>
+        )}
+        <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSave} disabled={saving || !hasChanges}>
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 4: MAP UI COMPONENTS
@@ -383,14 +548,28 @@ const LEGEND = [
 const hasLiveData = (sensors) => sensors?.some(s => s.hasData) ?? false;
 
 export default function P2F2MapPage() {
-  const [selectedIds, setSelectedIds] = useState(new Set(MAP_SENSORS.map(s => s.id)));
+  // 🆕 State to track which sensors are active (visible)
+  const [activeSensorIds, setActiveSensorIds] = useState(
+    () => new Set(MAP_SENSORS.filter(s => statusCache[s.id] !== "Inactive").map(s => s.id))
+  );
+
+  const [selectedIds, setSelectedIds] = useState(
+    () => new Set(MAP_SENSORS.filter(s => statusCache[s.id] !== "Inactive").map(s => s.id))
+  );
+
   const [limitsOpen,  setLimitsOpen]  = useState(false);
+  const [statusOpen, setStatusOpen] = useState(false);
   const [mapSensors,  setMapSensors]  = useState(mapSensorsCache ?? MAP_SENSORS);
   const [loading,     setLoading]     = useState(!hasLiveData(mapSensorsCache ?? []));
   const [limitsReady, setLimitsReady] = useState(Object.keys(limitsCache).length > 0);
+  const [statusReady, setStatusReady] = useState(Object.keys(statusCache).length > 0);
 
-  const allIds           = mapSensors.map(s => s.id);
-  const allSelected      = selectedIds.size === allIds.length;
+  // 🆕 Compute visible sensors based on activeSensorIds
+  const visibleSensors = mapSensors.filter(s => activeSensorIds.has(s.id));
+
+  // 🆕 allIds and allSelected now based on visible sensors
+  const allIds           = visibleSensors.map(s => s.id);
+  const allSelected      = selectedIds.size === allIds.length && allIds.length > 0;
   const totalActiveCount = mapSensors.filter(s => s.hasData).length;
 
   // Ref used inside the polling interval to check if the modal is open
@@ -398,6 +577,13 @@ export default function P2F2MapPage() {
   const limitsOpenRef = useRef(false);
   useEffect(() => { limitsOpenRef.current = limitsOpen; }, [limitsOpen]);
 
+  // 🆕 Helper to recompute activeSensorIds from statusCache
+  const recomputeActiveFromCache = () => {
+    const activeIds = new Set(MAP_SENSORS.filter(s => statusCache[s.id] !== "Inactive").map(s => s.id));
+    setActiveSensorIds(activeIds);
+    setSelectedIds(activeIds);  // ← keeps selectedIds in sync on first load
+  };
+  
   useEffect(() => {
     let interval;
 
@@ -446,6 +632,25 @@ export default function P2F2MapPage() {
           setLimitsReady(true);
         }
 
+        // Fetch statuses once on first load
+        if (Object.keys(statusCache).length === 0) {
+          try {
+            const res     = await axios.get(`${API_BASE}/sensors/status`, { params: { floor: "p2f2" } });
+            const entries = res.data.data.map(d => {
+              const sensor = MAP_SENSORS.find(s => s.areaId === d.areaId);
+              return sensor ? [sensor.id, d.status] : null;
+            }).filter(Boolean);
+            statusCache = Object.fromEntries(entries);
+            // 🆕 Update active sensor IDs after loading statuses
+            recomputeActiveFromCache();
+          } catch {
+            statusCache = Object.fromEntries(ALL_EDITABLE_SENSORS.map(s => [s.id, "Active"]));
+            // 🆕 Also update after fallback
+            recomputeActiveFromCache();
+          }
+          setStatusReady(true);
+        }
+
       } catch (err) { console.error("Failed to fetch P2F2 readings:", err); }
     };
 
@@ -456,6 +661,22 @@ export default function P2F2MapPage() {
 
   const toggle    = id => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(allIds));
+
+  // 🆕 Callback after statuses are saved
+  const handleStatusSaved = () => {
+    recomputeActiveFromCache();
+    // Remove any newly inactive sensors from selectedIds
+    setSelectedIds(prev => {
+      const next = new Set(prev);
+      MAP_SENSORS.forEach(s => {
+        if (statusCache[s.id] === "Inactive") next.delete(s.id);
+      });
+      return next;
+    });
+  };
+
+  // 🆕 Editable sensors for limits modal (only active ones)
+  const editableSensors = ALL_EDITABLE_SENSORS.filter(s => activeSensorIds.has(s.id));
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: 0 }}>
@@ -476,10 +697,12 @@ export default function P2F2MapPage() {
             <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
               <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>{allSelected ? "Deselect All" : "Select All"}</Button>
               <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={!limitsReady} onClick={() => setLimitsOpen(true)}>{limitsReady ? "Adjust Sensor Limits" : "Loading Limits…"}</Button>
+              <Button type="button" size="default" variant={statusOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={!statusReady} onClick={() => setStatusOpen(true)}>{statusReady ? "Manage Sensor Status" : "Loading Status…"}</Button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
               <div className="text-sm px-1 pt-2 pb-1">Line Name</div>
-              {mapSensors.map(s => <SensorListItem key={s.id} sensor={s} selected={selectedIds.has(s.id)} onToggle={toggle} />)}
+              {/* 🆕 Use visibleSensors */}
+              {visibleSensors.map(s => <SensorListItem key={s.id} sensor={s} selected={selectedIds.has(s.id)} onToggle={toggle} />)}
             </div>
             <div style={{ padding: "10px 20px 16px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
               {LEGEND.map(({ color, label, isText }) => (
@@ -498,17 +721,23 @@ export default function P2F2MapPage() {
             {/* Floor plan with overlaid markers */}
             <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid #e9ecef", minHeight: 0 }}>
               <img src={FLOOR_PLAN_IMAGE} alt="P2F2 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
-              {mapSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
+              {/* 🆕 Use visibleSensors */}
+              {visibleSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Adjust Sensor Limits modal ── */}
+      {/* ── Adjust Sensor Limits modal (only active sensors) ── */}
       <CustomModal open={limitsOpen} onOpenChange={open => { if (!open) setLimitsOpen(false); }} title="Adjust Sensor Limits" size="lg" fixedLayout>
-        <SensorLimitsContent onClose={() => setLimitsOpen(false)} sensors={ALL_EDITABLE_SENSORS} />
+        <SensorLimitsContent onClose={() => setLimitsOpen(false)} sensors={editableSensors} />
       </CustomModal>
 
+      {/* ── Manage Sensor Status modal — pass onSaved prop ── */}
+      <CustomModal open={statusOpen} onOpenChange={open => { if (!open) setStatusOpen(false); }} title="Manage Sensor Status" size="md" fixedLayout>
+        <SensorStatusContent onClose={() => setStatusOpen(false)} sensors={ALL_EDITABLE_SENSORS} onSaved={handleStatusSaved} />
+      </CustomModal>
+            
     </div>
   );
 }
