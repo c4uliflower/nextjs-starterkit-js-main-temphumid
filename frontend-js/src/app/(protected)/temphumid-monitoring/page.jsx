@@ -19,6 +19,7 @@ const INACTIVE_AREAS = new Set([
 // Module-level cache — persists across page navigations (component unmount/remount).
 // Populated after first successful fetch so switching pages shows last known data instantly.
 let floorsCache = null;
+let statusCache  = {};
 
 // Static floor metadata — only ids, labels, images, hrefs, and areaId mappings.
 // Live data (temp, humid, hasData, breach, limits, lastSeen) comes from the API.
@@ -539,10 +540,30 @@ export default function MonitoringPage() {
           data.forEach(d => { liveByFloor[floorId][d.areaId] = d; });
         });
 
+                // Fetch statuses once — persists across navigations like floorsCache
+        if (Object.keys(statusCache).length === 0) {
+          try {
+            const statusResults = await Promise.all(
+              ALL_FLOORS.map(floor =>
+                axios.get(`${API_BASE}/sensors/status`, {
+                  params: { floor: FLOOR_SLUG[floor.id] },
+                  signal,
+                }).then(res => res.data.data)
+                  .catch(() => [])
+              )
+            );
+            statusResults.flat().forEach(d => {
+              statusCache[d.areaId] = d.status;
+            });
+          } catch {
+            // Leave statusCache empty — no filtering applied as fallback
+          }
+        }
+
         // Merge live data into floor/sensor structure
         const newFloors = ALL_FLOORS.map(floor => ({
           ...floor,
-          sensors: floor.sensors.map(sensor => {
+          sensors: floor.sensors.filter(sensor => statusCache[sensor.areaId] !== "Inactive").map(sensor => {
             const live = liveByFloor[floor.id]?.[sensor.areaId];
             if (!live) return { ...sensor, hasData: false, breach: false, temp: null, humid: null, lastSeen: null, limits: null };
 
