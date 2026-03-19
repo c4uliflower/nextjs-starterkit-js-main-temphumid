@@ -56,6 +56,7 @@ const SENSOR_MAP = {
     { id: "P2F1-07", name: "WO-South - Holding Area"  },
     { id: "P2F1-04", name: "WO-S-West-IQC"            },
     { id: "P2F1-05", name: "WO-W South-QA"            },
+    { id: "P2F1-06", name: "Facilities"               },
   ],
   "P2F2": [
     { id: "P2F2-04", name: "Calibration Room"         },
