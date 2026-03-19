@@ -13,13 +13,13 @@ const API_BASE = '/api/temphumid';
 // Consolidated inactive areas across ALL map pages.
 // Breaches from these areaIds are suppressed (shown as active/green).
 const INACTIVE_AREAS = new Set([
-  "P2F2-01", // JCM Assy — P2F2
+
 ]);
 
 // Module-level cache — persists across page navigations (component unmount/remount).
 // Populated after first successful fetch so switching pages shows last known data instantly.
 let floorsCache = null;
-let statusCache  = {};
+let statusCache  = {}; // { [areaId]: 'Active' | 'Inactive' } — persists across navigations
 
 // Static floor metadata — only ids, labels, images, hrefs, and areaId mappings.
 // Live data (temp, humid, hasData, breach, limits, lastSeen) comes from the API.
@@ -83,9 +83,9 @@ const ALL_FLOORS = [
     href:  "/temphumid-p2f2",
     sensors: [
       { id: "calibration-room", areaId: "P2F2-04", name: "Calibration Room"     },
-      { id: "jcm-assy",         areaId: "P2F2-01", name: "JCM Assy"             }, // INACTIVE
+      { id: "jcm-assy",         areaId: "P2F2-01", name: "JCM Assy"             }, 
       { id: "wh-brother-pkg",   areaId: "P2F2-02", name: "WH Brother Packaging" },
-      { id: "wh-mh-jcm-assy",   areaId: "P2F2-03", name: "WH-MH JCM Assy"      },
+      { id: "wh-mh-jcm-assy",   areaId: "P2F2-03", name: "WH-MH JCM Assy"       },
       { id: "cis",              areaId: "P1F1-16", name: "CIS"                  }, // temp areaId
     ],
   },
@@ -515,6 +515,23 @@ export default function MonitoringPage() {
       const signal = abortRef.current.signal;
 
       try {
+        // Fetch sensor statuses first — must complete before building newFloors
+        // so the inactive sensor filter has data on the very first load.
+        // Resets floorsCache too so both stay in sync.
+        if (Object.keys(statusCache).length === 0) {
+          const statusResults = await Promise.all(
+            ALL_FLOORS.map(floor =>
+              axios.get(`${API_BASE}/sensors/status`, {
+                params: { floor: FLOOR_SLUG[floor.id] },
+                signal,
+              }).then(res => res.data.data)
+                .catch(() => [])
+            )
+          );
+          statusResults.flat().forEach(d => { statusCache[d.areaId] = d.status; });
+          floorsCache = null; // reset so newFloors rebuilds with fresh status filter
+        }
+
         // Fetch all floors in parallel — one request per floor slug
         const results = await Promise.all(
           ALL_FLOORS.map(floor =>
@@ -540,51 +557,34 @@ export default function MonitoringPage() {
           data.forEach(d => { liveByFloor[floorId][d.areaId] = d; });
         });
 
-                // Fetch statuses once — persists across navigations like floorsCache
-        if (Object.keys(statusCache).length === 0) {
-          try {
-            const statusResults = await Promise.all(
-              ALL_FLOORS.map(floor =>
-                axios.get(`${API_BASE}/sensors/status`, {
-                  params: { floor: FLOOR_SLUG[floor.id] },
-                  signal,
-                }).then(res => res.data.data)
-                  .catch(() => [])
-              )
-            );
-            statusResults.flat().forEach(d => {
-              statusCache[d.areaId] = d.status;
-            });
-          } catch {
-            // Leave statusCache empty — no filtering applied as fallback
-          }
-        }
-
-        // Merge live data into floor/sensor structure
+        // Merge live data into floor/sensor structure.
+        // Inactive sensors (per statusCache) are filtered out entirely.
         const newFloors = ALL_FLOORS.map(floor => ({
           ...floor,
-          sensors: floor.sensors.filter(sensor => statusCache[sensor.areaId] !== "Inactive").map(sensor => {
-            const live = liveByFloor[floor.id]?.[sensor.areaId];
-            if (!live) return { ...sensor, hasData: false, breach: false, temp: null, humid: null, lastSeen: null, limits: null };
+          sensors: floor.sensors
+            .filter(sensor => statusCache[sensor.areaId] !== "Inactive") // hide inactive sensors
+            .map(sensor => {
+              const live = liveByFloor[floor.id]?.[sensor.areaId];
+              if (!live) return { ...sensor, hasData: false, breach: false, temp: null, humid: null, lastSeen: null, limits: null };
 
-            // Respect INACTIVE_AREAS — suppress breach for inactive sensors
-            const isInactive = INACTIVE_AREAS.has(sensor.areaId);
-            const breach = live.status === "breach" && !isInactive;
+              // Respect INACTIVE_AREAS — suppress breach for inactive sensors
+              const isInactive = INACTIVE_AREAS.has(sensor.areaId);
+              const breach = live.status === "breach" && !isInactive;
 
-            return {
-              ...sensor,
-              temp:     live.temperature,
-              humid:    live.humidity,
-              hasData:  live.hasData,
-              lastSeen: live.lastSeen,
-              breach,
-              limits:   live.limits,
-              tempUL:   live.limits?.tempUL  ?? null,
-              tempLL:   live.limits?.tempLL  ?? null,
-              humidUL:  live.limits?.humidUL ?? null,
-              humidLL:  live.limits?.humidLL ?? null,
-            };
-          }),
+              return {
+                ...sensor,
+                temp:     live.temperature,
+                humid:    live.humidity,
+                hasData:  live.hasData,
+                lastSeen: live.lastSeen,
+                breach,
+                limits:   live.limits,
+                tempUL:   live.limits?.tempUL  ?? null,
+                tempLL:   live.limits?.tempLL  ?? null,
+                humidUL:  live.limits?.humidUL ?? null,
+                humidLL:  live.limits?.humidLL ?? null,
+              };
+            }),
         }));
 
         // Update cache so next navigation shows this data instantly
