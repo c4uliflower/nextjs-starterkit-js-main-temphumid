@@ -108,7 +108,7 @@ const ALL_FLOORS = [
   {
     id:    "p1and2f2",
     label: "P1&2F2",
-    image: "/logo/assets/P1 & P2F2-1.png",
+    image: "/logo/assets/P1-P2F2-1.png",
     href:  "/temphumid-p12f2",
     sensors: [
       { id: "p1p2-bridge", areaId: "P1F2-06", name: "P1P2 Bridge" },

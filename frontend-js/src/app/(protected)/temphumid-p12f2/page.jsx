@@ -10,7 +10,7 @@ const API_BASE = '/api/temphumid';
 // SECTION 1: DATA LAYER
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FLOOR_PLAN_IMAGE = "/logo/assets/P1 & P2F2-1.png";
+const FLOOR_PLAN_IMAGE = "/logo/assets/P1-P2F2-1.png";
 
 const INACTIVE_AREAS = new Set([]);
 
