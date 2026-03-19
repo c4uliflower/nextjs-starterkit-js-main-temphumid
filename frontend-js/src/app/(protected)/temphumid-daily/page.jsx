@@ -19,6 +19,7 @@ import axios from "@/lib/axios";
 const API_BASE = '/api/temphumid';
 
 let summaryCache = null;
+let statusCache  = {}; // { [areaId]: 'Active' | 'Inactive' } — persists across navigations
 
 const SENSOR_MAP = {
   "Cold Storage": [
@@ -79,8 +80,8 @@ const SENSOR_MAP = {
   ],
 };
 
-const ALL_LOCATIONS = Object.keys(SENSOR_MAP);
-const ALL_SENSORS   = Object.values(SENSOR_MAP).flat();
+// Floor slugs used to fetch statuses for all sensors
+const FLOOR_SLUGS = ["p1f1", "p1f2", "p2f1", "p2f2", "wh", "p12f2"];
 
 const SENSOR_LOCATION_MAP = {};
 Object.entries(SENSOR_MAP).forEach(([loc, sensors]) => {
@@ -472,6 +473,9 @@ export default function Dashboard() {
 
   const [summaryLoading, setSummaryLoading] = useState(!summaryCache);
 
+  // Tracks whether statusCache has been fetched — triggers re-render to update dropdowns
+  const [statusReady, setStatusReady] = useState(Object.keys(statusCache).length > 0);
+
   // ── Filter state ────────────────────────────────────────────────────────────
   const [selLocationValues, setSelLocationValues] = useState([]);
   const [selSensorValues,   setSelSensorValues]   = useState([]);
@@ -496,12 +500,33 @@ export default function Dashboard() {
   // ── Export state ────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
 
-  // ── Derived selections ──────────────────────────────────────────────────────
+  // Fetch sensor statuses once on mount — filters inactive sensors from dropdowns
+  useEffect(() => {
+    if (Object.keys(statusCache).length > 0) return; // already fetched
+    Promise.all(
+      FLOOR_SLUGS.map(slug =>
+        axios.get(`${API_BASE}/sensors/status`, { params: { floor: slug } })
+          .then(res => res.data.data)
+          .catch(() => [])
+      )
+    ).then(results => {
+      results.flat().forEach(d => { statusCache[d.areaId] = d.status; });
+      setStatusReady(true); // triggers re-render so dropdowns update
+    });
+  }, []);
+
+  // ── Derived selections — filtered by statusCache to hide inactive sensors ───
+  const ALL_SENSORS   = Object.values(SENSOR_MAP).flat()
+    .filter(s => statusCache[s.id] !== "Inactive");
+  const ALL_LOCATIONS = Object.keys(SENSOR_MAP)
+    .filter(loc => SENSOR_MAP[loc].some(s => statusCache[s.id] !== "Inactive"));
+
   const selSensors   = ALL_SENSORS.filter((s) => selSensorValues.includes(s.id));
   const selLocations = selLocationValues;
 
   const sensorOptionsList = selLocationValues.length > 0
     ? selLocationValues.flatMap((loc) => SENSOR_MAP[loc] ?? [])
+        .filter(s => statusCache[s.id] !== "Inactive")  // filter inactive from per-location list
     : ALL_SENSORS;
 
   const locationOptionsList = selSensorValues.length > 0
@@ -510,7 +535,8 @@ export default function Dashboard() {
 
   const sensorsToFetch = selSensors.length > 0
     ? selSensors
-    : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? []);
+    : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? [])
+        .filter(s => statusCache[s.id] !== "Inactive");  // filter inactive from fetch list too
 
   const canApply = sensorsToFetch.length > 0 && range?.from && range?.to;
 
