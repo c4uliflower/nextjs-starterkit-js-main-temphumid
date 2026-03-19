@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import axios from "@/lib/axios";
-import { CustomModal } from "@/components/custom/CustomModal";
 
 const API_BASE = '/api/temphumid';
 
@@ -19,8 +18,7 @@ const INACTIVE_AREAS = new Set([]);
 
 // Module-level caches — persist across page navigations so switching back
 // to this page shows the last known data instantly without a loading flash.
-let limitsCache      = {};
-let statusCache      = {};  // persists fetched statuses across modal opens
+let statusCache      = {};
 let mapSensorsCache  = null;
 let dessSensorsCache = null;
 
@@ -51,7 +49,7 @@ const DESSICATOR_SENSORS = [
   { id: "dess-5", areaId: "P1F1-13", name: "SMT MH Dessicator 5", },
 ];
 
-// Combined list used by the Adjust Sensor Limits and Manage Sensor Status modals
+// Combined list used for status fallback keying
 const ALL_EDITABLE_SENSORS = [
   ...MAP_SENSORS.map(s        => ({ id: s.id, name: s.name, areaId: s.areaId, group: "Sensors"     })),
   ...DESSICATOR_SENSORS.map(s => ({ id: s.id, name: s.name, areaId: s.areaId, group: "Dessicators" })),
@@ -132,383 +130,7 @@ function LoadingOverlay() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3A: SENSOR LIMITS MODAL CONTENT
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Reusable numeric input field used inside the limits modal.
-// Shows validation error styling and an inline unit label (°C or %).
-const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, saving }) => {
-  const err = errors[`${sensorId}.${fieldKey}`];
-  return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 3, flex: 1 }}>
-      <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</label>
-      <div style={{ position: "relative" }}>
-        <input type="number" value={draft[sensorId]?.[fieldKey] ?? ""} onChange={e => onSetField(sensorId, fieldKey, e.target.value)} disabled={saving}
-          style={{ width: "100%", padding: "7px 26px 7px 9px", borderRadius: 6, fontSize: 13, border: `1.5px solid ${err ? "#dc3545" : "#dee2e6"}`, background: err ? "#fff5f5" : saving ? "#f8f9fa" : "#fff", outline: "none", boxSizing: "border-box", opacity: saving ? 0.7 : 1 }} />
-        <span style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#adb5bd", pointerEvents: "none" }}>{unit}</span>
-      </div>
-      {err && <span className="text-xs text-destructive">{err}</span>}
-    </div>
-  );
-};
-
-// Modal content for adjusting sensor limits.
-// Draft state is initialized from limitsCache (pre-fetched on page load).
-// Only sensors with actual changes are sent to the API on save.
-function SensorLimitsContent({ onClose, sensors }) {
-  const [draft,    setDraft]    = useState(() => ({ ...limitsCache }));
-  const [errors,   setErrors]   = useState({});
-  const [activeId, setActiveId] = useState(sensors[0]?.id);
-  const [saving,   setSaving]   = useState(false);
-  const [apiError, setApiError] = useState(null);
-
-  // Snapshot of limits at modal open — used to diff against draft on save
-  const originalRef = useRef(JSON.parse(JSON.stringify(limitsCache)));
-
-  const setField = (sensorId, key, val) => {
-    setDraft(prev => ({ ...prev, [sensorId]: { ...prev[sensorId], [key]: val } }));
-    setErrors(prev => { const n = { ...prev }; delete n[`${sensorId}.${key}`]; return n; });
-    setApiError(null);
-  };
-
-  // Validates all sensors in the modal. Returns parsed numeric values and any errors.
-  const validate = () => {
-    const e = {}; const parsed = {};
-    for (const { id } of sensors) {
-      const row = draft[id]; parsed[id] = {};
-      for (const key of ["tempUL", "tempLL", "humidUL", "humidLL"]) {
-        const num = parseFloat(row?.[key]);
-        if (isNaN(num)) { e[`${id}.${key}`] = "Required"; continue; }
-        parsed[id][key] = num;
-      }
-      if (!e[`${id}.tempLL`]  && !e[`${id}.tempUL`]  && parsed[id].tempLL  >= parsed[id].tempUL)  e[`${id}.tempLL`]  = "LL must be < UL";
-      if (!e[`${id}.humidLL`] && !e[`${id}.humidUL`] && parsed[id].humidLL >= parsed[id].humidUL) e[`${id}.humidLL`] = "LL must be < UL";
-    }
-    return { errors: e, parsed };
-  };
-
-  // Returns sensor ids whose parsed values differ from the original snapshot
-  const getChangedIds = (parsed) =>
-    Object.keys(parsed).filter(id => {
-      const orig = originalRef.current[id];
-      const curr = parsed[id];
-      if (!orig || !curr) return false;
-      return ["tempUL", "tempLL", "humidUL", "humidLL"].some(
-        k => parseFloat(orig[k]) !== parseFloat(curr[k])
-      );
-    });
-
-  // Returns true if the current draft differs from the original for a given sensor id
-  const isChanged = (id) => {
-    const orig = originalRef.current[id];
-    const curr = draft[id];
-    if (!orig || !curr) return false;
-    return ["tempUL", "tempLL", "humidUL", "humidLL"].some(
-      k => parseFloat(orig[k]) !== parseFloat(curr[k])
-    );
-  };
-
-  const changedIds = getChangedIds(
-    Object.fromEntries(
-      sensors.map(({ id }) => [id, {
-        tempUL:  parseFloat(draft[id]?.tempUL),
-        tempLL:  parseFloat(draft[id]?.tempLL),
-        humidUL: parseFloat(draft[id]?.humidUL),
-        humidLL: parseFloat(draft[id]?.humidLL),
-      }])
-    )
-  );
-  const hasChanges = changedIds.length > 0;
-
-  const handleSaveLimits = async () => {
-    const { errors: e, parsed } = validate();
-    if (Object.keys(e).length) { setErrors(e); return; }
-    const changed = getChangedIds(parsed);
-    if (changed.length === 0) { onClose(); return; }
-    setSaving(true); setApiError(null);
-    try {
-      // Build payload using both MAP_SENSORS and DESSICATOR_SENSORS to resolve areaIds
-      const payload = {
-        sensors: changed.map(id => {
-          const sensor = [...MAP_SENSORS, ...DESSICATOR_SENSORS].find(s => s.id === id);
-          return { areaId: sensor.areaId, ...parsed[id] };
-        }),
-      };
-      await axios.post(`${API_BASE}/sensors/limits/batch`, payload);
-      // Update cache so modal re-opens with fresh values next time
-      limitsCache = { ...limitsCache, ...parsed };
-      onClose();
-    } catch (err) {
-      setApiError(err.message ?? "Something went wrong. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const hasRowError  = id => ["tempUL", "tempLL", "humidUL", "humidLL"].some(k => errors[`${id}.${k}`]);
-  const activeSensor = sensors.find(s => s.id === activeId);
-  const groups       = [...new Set(sensors.map(s => s.group))];
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-      <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid #e9ecef", flexShrink: 0 }}>
-        <p className="text-base font-semibold">Adjust Sensor Limits</p>
-        <p className="text-sm text-muted-foreground mt-0.5">
-          Plant 1 Floor 1 · Each sensor has its own threshold
-          {hasChanges && (
-            <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: "#435ebe" }}>
-              {changedIds.length} unsaved change{changedIds.length !== 1 ? "s" : ""}
-            </span>
-          )}
-        </p>
-      </div>
-      <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
-        {/* Sensor list sidebar */}
-        <div style={{ width: 180, flexShrink: 0, borderRight: "1px solid #e9ecef", overflowY: "auto", padding: "8px 0" }}>
-          {groups.map(group => {
-            const list = sensors.filter(s => s.group === group);
-            return (
-              <div key={group}>
-                <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest" style={{ padding: "10px 16px 4px" }}>{group}</div>
-                {list.map(({ id, name }) => (
-                  <div key={id} onClick={() => !saving && setActiveId(id)}
-                    style={{ padding: "9px 16px", cursor: saving ? "default" : "pointer", background: id === activeId ? "rgba(67,94,190,.08)" : "transparent", borderLeft: `3px solid ${id === activeId ? "#435ebe" : "transparent"}`, display: "flex", alignItems: "center", justifyContent: "space-between", transition: "background .1s" }}
-                    className={`text-sm ${id === activeId ? "font-semibold" : ""}`}>
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      {/* Orange dot — unsaved change indicator */}
-                      {!hasRowError(id) && isChanged(id) && (
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#fd7e14", display: "block" }} title="Unsaved change" />
-                      )}
-                      {/* Red dot — validation error indicator */}
-                      {hasRowError(id) && <span className="text-destructive" style={{ fontSize: 16, marginLeft: 4, lineHeight: 1 }}>•</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Active sensor edit panel */}
-        <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24, background: "#fff" }}>
-          <p className="text-base font-semibold">{activeSensor?.name}</p>
-          <div>
-            <p className="text-sm font-medium mb-3">Temperature</p>
-            <div style={{ display: "flex", gap: 16 }}>
-              <NumField sensorId={activeId} fieldKey="tempLL" label="Lower Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} />
-              <NumField sensorId={activeId} fieldKey="tempUL" label="Upper Limit" unit="°C" draft={draft} errors={errors} onSetField={setField} saving={saving} />
-            </div>
-          </div>
-          <div>
-            <p className="text-sm font-medium mb-3">Humidity</p>
-            <div style={{ display: "flex", gap: 16 }}>
-              <NumField sensorId={activeId} fieldKey="humidLL" label="Lower Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} />
-              <NumField sensorId={activeId} fieldKey="humidUL" label="Upper Limit" unit="%" draft={draft} errors={errors} onSetField={setField} saving={saving} />
-            </div>
-          </div>
-          {/* Apply current sensor's values to all sensors in the same group */}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: "auto" }}>
-            {groups.map(group => {
-              const list = sensors.filter(s => s.group === group);
-              if (!list.find(s => s.id === activeId)) return null;
-              return (
-                <Button key={group} type="button" size="default" variant="default" className="cursor-pointer" disabled={saving}
-                  onClick={() => { const src = draft[activeId]; setDraft(prev => { const next = { ...prev }; list.forEach(({ id }) => { next[id] = { ...src }; }); return next; }); }}>
-                  Apply to all {group.toLowerCase()}
-                </Button>
-              );
-            })}
-          </div>
-          {apiError && (
-            <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "10px 14px" }} className="text-sm text-destructive">
-              {apiError}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Modal footer */}
-      <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
-        {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
-        <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSaveLimits} disabled={saving || !hasChanges}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION 3B: SENSOR STATUS MODAL CONTENT
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Animated toggle switch — blue when active, grey when inactive.
-function StatusToggle({ active, disabled, onToggle }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      style={{
-        position: "relative", display: "inline-flex", alignItems: "center",
-        width: 40, height: 22, borderRadius: 11, border: "none",
-        cursor: disabled ? "default" : "pointer",
-        background: active ? "#435ebe" : "#dee2e6",
-        transition: "background .2s", flexShrink: 0,
-        opacity: disabled ? 0.6 : 1, padding: 0,
-      }}
-    >
-      <span style={{
-        position: "absolute", left: active ? 20 : 2, width: 18, height: 18,
-        borderRadius: "50%", background: "#fff",
-        boxShadow: "0 1px 3px rgba(0,0,0,.2)", transition: "left .2s",
-      }} />
-    </button>
-  );
-}
-
-// Modal content for managing sensor activity status (Active / Inactive).
-// Draft state is initialized from statusCache (pre-fetched on page load).
-// Only sensors with actual changes are sent to the API on save.
-function SensorStatusContent({ onClose, sensors, onSaved }) {
-  // draft: { [sensorId]: 'Active' | 'Inactive' }
-  const [draft,    setDraft]    = useState(() => ({ ...statusCache }));
-  const [saving,   setSaving]   = useState(false);
-  const [apiError, setApiError] = useState(null);
-
-  // Snapshot of statuses at modal open — used to diff against draft on save
-  const originalRef = useRef({ ...statusCache });
-
-  const isChanged  = id => draft[id] !== originalRef.current[id];
-  const changedIds = sensors.filter(s => isChanged(s.id)).map(s => s.id);
-  const hasChanges = changedIds.length > 0;
-
-  const toggleSensor = id => {
-    if (saving) return;
-    setDraft(prev => ({ ...prev, [id]: prev[id] === "Active" ? "Inactive" : "Active" }));
-    setApiError(null);
-  };
-
-  const handleSave = async () => {
-    if (!hasChanges) { onClose(); return; }
-    setSaving(true); setApiError(null);
-    try {
-      // Build payload using only changed sensors — same diff pattern as limits modal
-      const payload = {
-        sensors: changedIds.map(id => {
-          const sensor = sensors.find(s => s.id === id);
-          return { areaId: sensor.areaId, status: draft[id] };
-        }),
-      };
-      await axios.post(`${API_BASE}/sensors/status/batch`, payload);
-      // Update cache with saved values so modal re-opens with fresh state
-      changedIds.forEach(id => { statusCache[id] = draft[id]; });
-      onSaved?.();
-      onClose();
-    } catch (err) {
-      setApiError(err.message ?? "Something went wrong. Please try again.");
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const groups        = [...new Set(sensors.map(s => s.group))];
-  const activeCount   = sensors.filter(s => draft[s.id] === "Active").length;
-  const inactiveCount = sensors.filter(s => draft[s.id] === "Inactive").length;
-
-  return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, minHeight: 0 }}>
-
-      {/* Header */}
-      <div style={{ padding: "16px 20px 14px", borderBottom: "1px solid #e9ecef", flexShrink: 0 }}>
-        <p className="text-base font-semibold">Manage Sensor Status</p>
-        <p className="text-sm text-muted-foreground mt-0.5" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          Plant 1 Floor 1 · {activeCount} active, {inactiveCount} inactive
-          {hasChanges && !saving && (
-            <span style={{ fontSize: 11, fontWeight: 700, color: "#435ebe" }}>
-              {changedIds.length} unsaved change{changedIds.length !== 1 ? "s" : ""}
-            </span>
-          )}
-        </p>
-      </div>
-
-      {/* Sensor list — grouped by Sensors / Dessicators */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "8px 0" }}>
-        {groups.map(group => {
-          const list = sensors.filter(s => s.group === group);
-          return (
-            <div key={group}>
-              {/* Group header */}
-              <div className="text-xs font-semibold text-muted-foreground uppercase tracking-widest"
-                style={{ padding: "10px 20px 6px", borderBottom: "1px solid #f3f4f6" }}>
-                {group}
-              </div>
-              {list.map(({ id, name }) => {
-                const isActive = draft[id] === "Active";
-                const changed  = isChanged(id);
-                return (
-                  <div key={id}
-                    style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      padding: "10px 20px", borderBottom: "1px solid #f9fafb",
-                      background: changed ? "rgba(67,94,190,.04)" : "transparent",
-                      transition: "background .1s",
-                    }}>
-                    {/* Left: status dot + name + changed badge */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <div style={{
-                        width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
-                        background: isActive ? "#00c9a7" : "#adb5bd",
-                      }} />
-                      <span style={{ fontSize: 13, fontWeight: changed ? 600 : 400 }}>{name}</span>
-                      {/* Orange label — unsaved change indicator */}
-                      {changed && (
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#fd7e14", letterSpacing: ".04em" }}>
-                          CHANGED
-                        </span>
-                      )}
-                    </div>
-                    {/* Right: status label + toggle */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{
-                        fontSize: 11, fontWeight: 600,
-                        color: isActive ? "#00c9a7" : "#adb5bd",
-                        minWidth: 52, textAlign: "right",
-                      }}>
-                        {isActive ? "Active" : "Inactive"}
-                      </span>
-                      <StatusToggle active={isActive} disabled={saving} onToggle={() => toggleSensor(id)} />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modal footer */}
-      <div style={{ padding: "12px 20px 14px", borderTop: "1px solid #e9ecef", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", flexShrink: 0, background: "#fff" }}>
-        {saving && <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>Saving to database…</span>}
-        {apiError && (
-          <div style={{ marginRight: "auto", background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "6px 12px" }}
-            className="text-sm text-destructive">{apiError}</div>
-        )}
-        <Button variant="outline" size="default" className="cursor-pointer" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button variant="default" size="default" className="cursor-pointer" onClick={handleSave} disabled={saving || !hasChanges}>
-          {saving ? "Saving…" : "Save"}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SECTION 4: MAP UI COMPONENTS
+// SECTION 3: MAP UI COMPONENTS
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Floating info pane shown when a sensor marker is selected.
@@ -654,41 +276,28 @@ const LEGEND = [
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 5: MAIN PAGE
+// SECTION 4: MAIN PAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Returns true if at least one sensor in the list has a live reading
 const hasLiveData = (sensors) => sensors?.some(s => s.hasData) ?? false;
 
 export default function P1F1MapPage() {
-  // FIX: use ALL_SENSORS so dessicators are included in visibility logic
   const [activeSensorIds, setActiveSensorIds] = useState(
     () => new Set(ALL_SENSORS.filter(s => statusCache[s.id] !== "Inactive").map(s => s.id))
   );
   const [selectedIds, setSelectedIds] = useState(new Set(MAP_SENSORS.map(s => s.id)));
   const [dessOpen,    setDessOpen]    = useState(false);
-  const [limitsOpen,  setLimitsOpen]  = useState(false);
-  const [statusOpen,  setStatusOpen]  = useState(false);  // controls Manage Sensor Status modal
   const [mapSensors,  setMapSensors]  = useState(mapSensorsCache  ?? MAP_SENSORS);
   const [dessSensors, setDessSensors] = useState(dessSensorsCache ?? DESSICATOR_SENSORS);
   const [loading,     setLoading]     = useState(!hasLiveData(mapSensorsCache ?? []));
 
   const visibleSensors     = mapSensors.filter(s => activeSensorIds.has(s.id));
-  // FIX: filter dessicators by activeSensorIds too
   const visibleDessSensors = dessSensors.filter(s => activeSensorIds.has(s.id));
 
   const allIds           = visibleSensors.map(s => s.id);
   const allSelected      = selectedIds.size === allIds.length;
   const totalActiveCount = mapSensors.filter(s => s.hasData).length;
-
-  // limitsReady / statusReady gate their respective buttons — true once caches are populated
-  const [limitsReady, setLimitsReady] = useState(Object.keys(limitsCache).length > 0);
-  const [statusReady, setStatusReady] = useState(Object.keys(statusCache).length > 0);
-
-  // Ref used inside the polling interval to check if the limits modal is open
-  // without causing the effect to re-run when limitsOpen changes
-  const limitsOpenRef = useRef(false);
-  useEffect(() => { limitsOpenRef.current = limitsOpen; }, [limitsOpen]);
 
   useEffect(() => {
     let interval;
@@ -720,53 +329,22 @@ export default function P1F1MapPage() {
 
         if (hasLiveData(newMap) || hasLiveData(newDess)) setLoading(false);
 
-        // Fetch limits once on first load — one batch request for all sensors.
-        // limitsCache persists across navigations so this only runs once per session.
-        if (Object.keys(limitsCache).length === 0) {
-          try {
-            const areaIds = ALL_EDITABLE_SENSORS.map(s => {
-              const src = [...MAP_SENSORS, ...DESSICATOR_SENSORS].find(m => m.id === s.id);
-              return src?.areaId;
-            }).filter(Boolean);
-            const limRes = await axios.get(`${API_BASE}/sensors/limits/batch-show`, {
-              params: { areaIds },
-              paramsSerializer: (p) => p.areaIds.map(id => `areaIds[]=${encodeURIComponent(id)}`).join('&'),
-            });
-            const byAreaId = limRes.data.data;
-            const entries = ALL_EDITABLE_SENSORS.map(s => {
-              const src = [...MAP_SENSORS, ...DESSICATOR_SENSORS].find(m => m.id === s.id);
-              const lim = src ? byAreaId[src.areaId] : null;
-              return [s.id, lim ?? { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }];
-            });
-            limitsCache = Object.fromEntries(entries);
-          } catch {
-            // Fallback to defaults so the button still becomes ready
-            limitsCache = Object.fromEntries(
-              ALL_EDITABLE_SENSORS.map(s => [s.id, { tempUL: 28, tempLL: 13, humidUL: 80, humidLL: 40 }])
-            );
-          }
-          setLimitsReady(true);
-        }
-
         // Fetch statuses once on first load — one request using floor slug.
         // statusCache persists across navigations so this only runs once per session.
         if (Object.keys(statusCache).length === 0) {
           try {
             const res     = await axios.get(`${API_BASE}/sensors/status`, { params: { floor: "p1f1" } });
             const entries = res.data.data.map(d => {
-              // FIX: search ALL_SENSORS so dessicators are included
               const sensor = ALL_SENSORS.find(s => s.areaId === d.areaId);
               return sensor ? [sensor.id, d.status] : null;
             }).filter(Boolean);
             statusCache = Object.fromEntries(entries);
-            // FIX: recompute using ALL_SENSORS
             setActiveSensorIds(
               new Set(ALL_SENSORS.filter(s => statusCache[s.id] !== "Inactive").map(s => s.id))
             );
           } catch {
             statusCache = Object.fromEntries(ALL_EDITABLE_SENSORS.map(s => [s.id, "Active"]));
           }
-          setStatusReady(true);
         }
       } catch (err) {
         console.error("Failed to fetch P1F1 readings:", err);
@@ -780,30 +358,6 @@ export default function P1F1MapPage() {
 
   const toggle    = id => setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const toggleAll = () => setSelectedIds(allSelected ? new Set() : new Set(allIds));
-
-  const handleStatusSaved = () => {
-    // FIX: recompute using ALL_SENSORS
-    setActiveSensorIds(
-      new Set(ALL_SENSORS.filter(s => statusCache[s.id] !== "Inactive").map(s => s.id))
-    );
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      ALL_SENSORS.forEach(s => {
-        if (statusCache[s.id] === "Inactive") next.delete(s.id);
-      });
-      return next;
-    });
-  };
-
-  // FIX: editableSensors filters inactive sensors from both groups for the limits modal
-  const editableSensors = [
-    ...MAP_SENSORS
-      .filter(s => activeSensorIds.has(s.id))
-      .map(s => ({ id: s.id, areaId: s.areaId, name: s.name, group: "Sensors" })),
-    ...DESSICATOR_SENSORS
-      .filter(s => activeSensorIds.has(s.id))
-      .map(s => ({ id: s.id, areaId: s.areaId, name: s.name, group: "Dessicators" })),
-  ];
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: 0 }}>
@@ -824,13 +378,6 @@ export default function P1F1MapPage() {
             <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
               <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>
                 {allSelected ? "Deselect All" : "Select All"}
-              </Button>
-              <Button type="button" size="default" variant={limitsOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={!limitsReady} onClick={() => setLimitsOpen(true)}>
-                {limitsReady ? "Adjust Sensor Limits" : "Loading Limits…"}
-              </Button>
-              {/* Manage Sensor Status button — disabled until statusCache is populated */}
-              <Button type="button" size="default" variant={statusOpen ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" disabled={!statusReady} onClick={() => setStatusOpen(true)}>
-                {statusReady ? "Manage Sensor Status" : "Loading Status…"}
               </Button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
@@ -857,7 +404,6 @@ export default function P1F1MapPage() {
               onClick={e => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}>
               <img src={FLOOR_PLAN_IMAGE} alt="P1F1 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
               {visibleSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
-              {/* FIX: pass visibleDessSensors — hides inactive dessicators from zone popup */}
               <DessicatorZoneMarker open={dessOpen} onToggle={() => setDessOpen(v => !v)} sensors={visibleDessSensors} />
             </div>
 
@@ -865,7 +411,6 @@ export default function P1F1MapPage() {
             <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "10px 16px", flexShrink: 0 }}>
               <div className="text-sm mb-2">Dessicators</div>
               <div style={{ display: "flex", gap: 10, overflowX: "auto" }}>
-                {/* FIX: use visibleDessSensors — hides inactive dessicators from bottom cards */}
                 {visibleDessSensors.map(s => <DessicatorCard key={s.id} sensor={s} />)}
               </div>
             </div>
@@ -873,16 +418,6 @@ export default function P1F1MapPage() {
           </div>
         </div>
       </div>
-
-      {/* Limits modal */}
-      <CustomModal open={limitsOpen} onOpenChange={open => { if (!open) setLimitsOpen(false); }} title="Adjust Sensor Limits" size="lg" fixedLayout>
-        <SensorLimitsContent onClose={() => setLimitsOpen(false)} sensors={editableSensors} />
-      </CustomModal>
-
-      {/* Status modal */}
-      <CustomModal open={statusOpen} onOpenChange={open => { if (!open) setStatusOpen(false); }} title="Manage Sensor Status" size="md" fixedLayout>
-        <SensorStatusContent onClose={() => setStatusOpen(false)} sensors={ALL_EDITABLE_SENSORS} onSaved={handleStatusSaved} />
-      </CustomModal>
 
     </div>
   );
