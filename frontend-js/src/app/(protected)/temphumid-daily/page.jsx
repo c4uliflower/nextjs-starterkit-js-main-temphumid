@@ -40,7 +40,6 @@ const SENSOR_MAP = {
     { id: "P1F1-11", name: "SMT MH Dessicator 3"      },
     { id: "P1F1-12", name: "SMT MH Dessicator 4"      },
     { id: "P1F1-13", name: "SMT MH Dessicator 5"      },
-    { id: "P1F1-18", name: "SMT MH Dessicator 6"      },
     { id: "P1F1-14", name: "SMT MH Receiving"         },
     { id: "P1F1-15", name: "BGA Rework"               },
   ],
