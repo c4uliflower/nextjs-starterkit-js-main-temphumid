@@ -9,7 +9,7 @@ http:
   address: 0.0.0.0:8000
   middleware: [ "static", "headers", "gzip" ]
   pool:
-    debug: true #recommended during development
+    debug: false #recommended during development
     #max_jobs: 64 # feel free to change this
     supervisor:
       exec_ttl: 60s
