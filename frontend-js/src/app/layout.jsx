@@ -11,7 +11,7 @@ const nunitoMono = Nunito({
 });
 
 export const metadata = {
-  title: "Next.js Starter Kit UI",
+  title: "Temperature & Humidity Monitoring System",
   description: "Migrated Next.js dashboard and component showcase",
 };
 

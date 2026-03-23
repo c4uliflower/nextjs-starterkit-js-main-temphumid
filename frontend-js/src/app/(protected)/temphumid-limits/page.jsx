@@ -18,7 +18,7 @@ const FLOORS = [
   { slug: "p2f1",  label: "Plant 2 · Floor 1",     subLabel: "P2F1"   },
   { slug: "p2f2",  label: "Plant 2 · Floor 2",     subLabel: "P2F2"   },
   { slug: "p12f2", label: "Plant 1 & 2 · Floor 2", subLabel: "Bridge" },
-  { slug: "wh",    label: "Warehouse",              subLabel: "WH"     },
+  { slug: "wh",    label: "Warehouse",              subLabel: "WH"    },
 ];
 
 // All sensor registry entries across all floors.

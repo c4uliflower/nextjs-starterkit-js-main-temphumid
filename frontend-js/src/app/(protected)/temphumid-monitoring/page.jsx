@@ -308,17 +308,30 @@ function SensorStatusRow({ sensor, index }) {
       </div>
       {open && (
         <div style={{ padding: "0 16px 12px", borderTop: `1px solid ${cfg.color}15` }}>
-          {sensor.hasData ? (
-            <>
-              <div style={{ fontSize: 13, color: cfg.color, marginTop: 8 }}>
+        {sensor.hasData ? (
+          <>
+            <div style={{ fontSize: 13, color: cfg.color, marginTop: 8 }}>
+              <div>
                 Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong>
-                &nbsp;·&nbsp;
-                Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong>
+                {sensor.tempLL != null && sensor.tempUL != null && (
+                  <span style={{ fontSize: 11, color: "#6c757d", marginLeft: 6 }}>
+                    {sensor.tempLL}–{sensor.tempUL}°C
+                  </span>
+                )}
               </div>
-              {sensor.breach && (
-                <div style={{ fontSize: 11, color: "#dc3545", marginTop: 4, fontWeight: 600 }}>⚠ Exceeds limit</div>
-              )}
-            </>
+              <div style={{ marginTop: 3 }}>
+                Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong>
+                {sensor.humidLL != null && sensor.humidUL != null && (
+                  <span style={{ fontSize: 11, color: "#6c757d", marginLeft: 6 }}>
+                    {sensor.humidLL}–{sensor.humidUL}%
+                  </span>
+                )}
+              </div>
+            </div>
+            {sensor.breach && (
+              <div style={{ fontSize: 11, color: "#dc3545", marginTop: 4, fontWeight: 600 }}>⚠ Exceeds limit</div>
+            )}
+          </>
           ) : (
             <div style={{ fontSize: 12, color: cfg.color, marginTop: 8, opacity: .8 }}>
               No readings available — sensor may be offline.
@@ -653,7 +666,7 @@ export default function MonitoringPage() {
 
         {/* ── Page title ── */}
         <div style={{ padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div className="bg-background mt-4">
+          <div className="bg-background mt-2.5">
             <h1 className="text-2xl font-bold">Monitoring</h1>
             <p className="text-muted-foreground mt-1">
               {loading

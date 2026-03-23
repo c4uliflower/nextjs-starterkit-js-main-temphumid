@@ -620,7 +620,8 @@ export default function Dashboard() {
       Object.values(batchData).forEach(({ readings }) => {
         readings.forEach(r => allTimes.add(r.dayTime));
       });
-      const sortedTimes = [...allTimes].sort();
+      
+      const sortedTimes = [...allTimes].sort().filter(t => new Date(t).getDay() !== 0);
 
       if (sortedTimes.length === 0) {
         setNoData(true); setApplied(true); setLoading(false); return;
