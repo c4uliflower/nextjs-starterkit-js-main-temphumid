@@ -26,11 +26,12 @@ class SensorReadingController extends Controller
     /**
      * Determine aggregation resolution based on day range.
      *
-     * ≤ 3 days  → raw        (every row, ~5s intervals)
-     * ≤ 7 days  → thirty_min (1 point per 30 minutes)
-     * ≤ 14 days → hourly     (1 point per hour)
-     * ≤ 90 days → six_hour   (1 point per 6 hours)
-     * >  90 days → daily     (1 point per day)
+     * ≤ 30 days  → thirty_min  (1 point per 30 minutes)
+     * ≤ 60 days  → hourly      (1 point per hour)
+     * ≤ 120 days → three_hour  (1 point per 3 hours)
+     * ≤ 180 days → six_hour    (1 point per 6 hours)
+     * ≤ 365 days → twelve_hour (1 point per 12 hours)
+     * >  365 days → daily      (1 point per day)
      */
     private function resolveAggregation(string $from, string $to): array
     {
@@ -38,20 +39,24 @@ class SensorReadingController extends Controller
             (strtotime($to) - strtotime($from)) / 86400
         );
 
-        if ($days <= 3) {
-            return ['resolution' => 'raw', 'days' => $days];
-        }
-
-        if ($days <= 7) {
+        if ($days <= 30) {
             return ['resolution' => 'thirty_min', 'days' => $days];
         }
 
-        if ($days <= 14) {
+        if ($days <= 60) {
             return ['resolution' => 'hourly', 'days' => $days];
         }
 
-        if ($days <= 90) {
+        if ($days <= 120) {
+            return ['resolution' => 'three_hour', 'days' => $days];
+        }
+
+        if ($days <= 180) {
             return ['resolution' => 'six_hour', 'days' => $days];
+        }
+
+        if ($days <= 365) {
+            return ['resolution' => 'twelve_hour', 'days' => $days];
         }
 
         return ['resolution' => 'daily', 'days' => $days];
@@ -294,11 +299,13 @@ class SensorReadingController extends Controller
 
             } else {
                 $bucketExpr = match ($resolution) {
-                    'thirty_min' => "DATEADD(minute, (DATEDIFF(minute, 0, [Day_Time]) / 30) * 30, 0)",
-                    'hourly'     => "DATEADD(hour,  DATEDIFF(hour,  0, [Day_Time]), 0)",
-                    'six_hour'   => "DATEADD(hour,  (DATEDIFF(hour,  0, [Day_Time]) / 6) * 6, 0)",
-                    'daily'      => "DATEADD(day,   DATEDIFF(day,   0, [Day_Time]), 0)",
-                    default      => "DATEADD(day,   DATEDIFF(day,   0, [Day_Time]), 0)",
+                    'thirty_min'  => "DATEADD(minute, (DATEDIFF(minute, 0, [Day_Time]) / 30) * 30, 0)",
+                    'hourly'      => "DATEADD(hour,    DATEDIFF(hour,   0, [Day_Time]),        0)",
+                    'three_hour'  => "DATEADD(hour,   (DATEDIFF(hour,  0, [Day_Time]) / 3)  * 3,  0)",
+                    'six_hour'    => "DATEADD(hour,   (DATEDIFF(hour,  0, [Day_Time]) / 6)  * 6,  0)",
+                    'twelve_hour' => "DATEADD(hour,   (DATEDIFF(hour,  0, [Day_Time]) / 12) * 12, 0)",
+                    'daily'       => "DATEADD(day,     DATEDIFF(day,   0, [Day_Time]),        0)",
+                    default       => "DATEADD(day,     DATEDIFF(day,   0, [Day_Time]),        0)",
                 };
 
                 $placeholders = implode(',', array_fill(0, count($chipIds), '?'));

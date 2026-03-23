@@ -153,6 +153,13 @@ const fmtDatetime = (t) => {
   return t.replace("T", " ").replace(/\.\d+([+-]\d{2}:\d{2}|Z)?$/, "").trim();
 };
 
+/**
+ * Filter out Sundays (getDay() === 0) from a sorted times array.
+ * When includeSundays is true, returns the array unchanged.
+ */
+const filterSundays = (times, includeSundays) =>
+  includeSundays ? times : times.filter(t => new Date(t).getDay() !== 0);
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 3: LOADING OVERLAY
@@ -494,8 +501,10 @@ export default function Dashboard() {
   const [resolution,    setResolution]    = useState("raw");
 
   // ── View toggle ─────────────────────────────────────────────────────────────
-  const [chartView, setChartView] = useState("daily");
-  const rawDataRef                = useRef(null);
+  const [chartView,      setChartView]      = useState("daily");
+  const [includeSundays, setIncludeSundays] = useState(false);
+  const rawDataRef                          = useRef(null); // filtered sortedTimes + perSensor
+  const allTimesRef                         = useRef(null); // unfiltered sortedTimes — needed to restore Sundays
 
   // ── Export state ────────────────────────────────────────────────────────────
   const [exporting, setExporting] = useState(false);
@@ -526,7 +535,7 @@ export default function Dashboard() {
 
   const sensorOptionsList = selLocationValues.length > 0
     ? selLocationValues.flatMap((loc) => SENSOR_MAP[loc] ?? [])
-        .filter(s => statusCache[s.id] !== "Inactive")  // filter inactive from per-location list
+        .filter(s => statusCache[s.id] !== "Inactive")
     : ALL_SENSORS;
 
   const locationOptionsList = selSensorValues.length > 0
@@ -536,7 +545,7 @@ export default function Dashboard() {
   const sensorsToFetch = selSensors.length > 0
     ? selSensors
     : selLocations.flatMap((loc) => SENSOR_MAP[loc] ?? [])
-        .filter(s => statusCache[s.id] !== "Inactive");  // filter inactive from fetch list too
+        .filter(s => statusCache[s.id] !== "Inactive");
 
   const canApply = sensorsToFetch.length > 0 && range?.from && range?.to;
 
@@ -572,6 +581,26 @@ export default function Dashboard() {
       : buildDailyDatasets(rawDataRef.current, resolution);
     setLabels(l); setTempDS(t); setHumidDS(h);
     setChartView(view);
+    setChartKey(k => k + 1);
+  };
+
+  // ── Sunday toggle handler ───────────────────────────────────────────────────
+  const handleSundayToggle = (e) => {
+    const checked = e.target.checked;
+    setIncludeSundays(checked);
+
+    if (!allTimesRef.current || !rawDataRef.current) return;
+
+    // Re-derive sortedTimes from the full unfiltered set stored in allTimesRef
+    const filteredTimes = filterSundays(allTimesRef.current, checked);
+    const updatedData   = { ...rawDataRef.current, sortedTimes: filteredTimes };
+    rawDataRef.current  = updatedData;
+
+    const { labels: l, tempDS: t, humidDS: h } = chartView === "monthly"
+      ? buildMonthlyDatasets(updatedData)
+      : buildDailyDatasets(updatedData, resolution);
+
+    setLabels(l); setTempDS(t); setHumidDS(h);
     setChartKey(k => k + 1);
   };
 
@@ -620,8 +649,13 @@ export default function Dashboard() {
       Object.values(batchData).forEach(({ readings }) => {
         readings.forEach(r => allTimes.add(r.dayTime));
       });
-      
-      const sortedTimes = [...allTimes].sort().filter(t => new Date(t).getDay() !== 0);
+
+      // Preserve the full unfiltered set so the Sunday toggle can restore them later
+      const allSorted       = [...allTimes].sort();
+      allTimesRef.current   = allSorted;
+
+      // Apply Sunday filter based on current toggle state
+      const sortedTimes = filterSundays(allSorted, includeSundays);
 
       if (sortedTimes.length === 0) {
         setNoData(true); setApplied(true); setLoading(false); return;
@@ -678,8 +712,9 @@ export default function Dashboard() {
     setRange(getDefault24hRange());
     setTempDS([]); setHumidDS([]); setLabels([]); setLimitProfiles([]);
     setApplied(false); setApiError(null); setNoData(false);
-    setChartView("daily"); setResolution("raw");
-    rawDataRef.current = null;
+    setChartView("daily"); setResolution("raw"); setIncludeSundays(false);
+    rawDataRef.current  = null;
+    allTimesRef.current = null;
   };
 
   const hintText = (() => {
@@ -692,9 +727,6 @@ export default function Dashboard() {
     return "Location narrows sensor options · Sensor narrows location options";
   })();
 
-  // chartSubtitle currently shows the raw resolution key (e.g., "raw", "daily")
-  // because RESOLUTION_META was removed. Once we restore RESOLUTION_META with
-  // display labels, this will show proper labels.
   const chartSubtitle = (metric) => {
     const resLabel = chartView === "monthly" ? "monthly" : resolution;
     return `${metric} · ${resLabel} · Scroll to zoom · Click & drag to pan`;
@@ -776,28 +808,42 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Legend row + Daily/Monthly toggle */}
+          {/* Legend row + Daily/Monthly toggle + Sunday checkbox */}
           <div className="flex items-center gap-4 pt-3 pb-1">
             <p className="text-xs text-muted-foreground flex-1">{hintText}</p>
 
             {applied && !noData && !apiError && (
-              <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>
-                {["daily", "monthly"].map((v) => (
-                  <button
-                    key={v}
-                    onClick={() => handleViewToggle(v)}
-                    style={{
-                      padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
-                      fontSize: 12, fontWeight: chartView === v ? 600 : 400,
-                      background: chartView === v ? "#fff" : "transparent",
-                      boxShadow: chartView === v ? "0 1px 3px rgba(0,0,0,.10)" : "none",
-                      transition: "all .15s",
-                    }}
-                  >
-                    {v === "daily" ? "Daily" : "Monthly"}
-                  </button>
-                ))}
-              </div>
+              <>
+                {/* Sunday toggle */}
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6c757d", cursor: "pointer", userSelect: "none" }}>
+                  <input
+                    type="checkbox"
+                    checked={includeSundays}
+                    onChange={handleSundayToggle}
+                    style={{ cursor: "pointer" }}
+                  />
+                  Include Sundays
+                </label>
+
+                {/* Daily / Monthly toggle */}
+                <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>
+                  {["daily", "monthly"].map((v) => (
+                    <button
+                      key={v}
+                      onClick={() => handleViewToggle(v)}
+                      style={{
+                        padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
+                        fontSize: 12, fontWeight: chartView === v ? 600 : 400,
+                        background: chartView === v ? "#fff" : "transparent",
+                        boxShadow: chartView === v ? "0 1px 3px rgba(0,0,0,.10)" : "none",
+                        transition: "all .15s",
+                      }}
+                    >
+                      {v === "daily" ? "Daily" : "Monthly"}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
 
             <div className="flex items-center gap-3 shrink-0">
