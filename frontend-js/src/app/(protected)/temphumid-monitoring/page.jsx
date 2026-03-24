@@ -180,6 +180,7 @@ function getFloorSummary(floor) {
   return parts.length ? parts.join(" · ") : "All stable";
 }
 
+// Semantic status colors — intentionally hardcoded, not theme-dependent
 const STATUS_CONFIG = {
   breach:  { color: "#dc3545", bg: "#ffe8e8", label: "Breach",  dot: "#dc3545" },
   no_data: { color: "#6c757d", bg: "#f1f3f5", label: "No Data", dot: "#adb5bd" },
@@ -210,8 +211,6 @@ function StatusDot({ status, size = 8 }) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 4: LOADING OVERLAY
-// Blocks the entire page on first fetch — disappears once data arrives.
-// Subsequent polls run silently in the background without showing this.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function LoadingOverlay() {
@@ -222,20 +221,23 @@ function LoadingOverlay() {
       display: "flex", alignItems: "center", justifyContent: "center",
     }}>
       <div style={{
-        background: "#fff", borderRadius: 10, padding: "36px 48px",
+        // ✅ was: background: "#fff" — now uses card token so it's dark in dark mode
+        background: "var(--card)",
+        borderRadius: 10, padding: "36px 48px",
         display: "flex", flexDirection: "column", alignItems: "center", gap: 20,
         boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260,
       }}>
-        {/* Spinner */}
         <div style={{
           width: 44, height: 44, borderRadius: "50%",
-          border: "4px solid #e9ecef",
+          border: "4px solid var(--border)",
           borderTop: "4px solid #435ebe",
           animation: "spinLoader 0.8s linear infinite",
         }} />
         <div style={{ textAlign: "center" }}>
-          <p style={{ fontWeight: 700, fontSize: 15, color: "#212529", margin: 0 }}>Fetching sensor data</p>
-          <p style={{ fontSize: 12, color: "#6c757d", marginTop: 6 }}>Please wait while live readings are loaded…</p>
+          {/* ✅ was: color: "#212529" */}
+          <p style={{ fontWeight: 700, fontSize: 15, color: "var(--foreground)", margin: 0 }}>Fetching sensor data</p>
+          {/* ✅ was: color: "#6c757d" */}
+          <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 6 }}>Please wait while live readings are loaded…</p>
         </div>
       </div>
     </div>
@@ -260,16 +262,24 @@ function FloorCard({ floor, onClick }) {
         borderRadius: 5, overflow: "hidden", cursor: "pointer",
         border: `2px solid ${cfg.color}`,
         animation: isBreach ? "borderBlink 1.2s ease-in-out infinite" : "none",
-        background: "#fff", transition: "transform .15s",
+        // ✅ was: background: "#fff"
+        background: "var(--card)",
+        transition: "transform .15s",
         display: "flex", flexDirection: "column",
       }}
       onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; }}
       onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; }}
     >
-      <div style={{ flex: 1, overflow: "hidden", background: "#f8f9fa", minHeight: 180, maxHeight: 240 }}>
+      <div style={{
+        flex: 1, overflow: "hidden",
+        // ✅ was: background: "#f8f9fa"
+        background: "var(--muted)",
+        minHeight: 180, maxHeight: 240,
+      }}>
         <img src={floor.image} alt={floor.label}
           style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", pointerEvents: "none", userSelect: "none" }} />
       </div>
+      {/* Footer strip — cfg.bg is a semantic status color, intentionally kept */}
       <div style={{ padding: "10px 14px", background: cfg.bg, display: "flex", alignItems: "center", gap: 8 }}>
         {isBreach && <BreachDot />}
         {!isBreach && floorStatus !== "active" && <StatusDot status={floorStatus} size={10} />}
@@ -286,6 +296,7 @@ function SensorStatusRow({ sensor, index }) {
   const cfg    = STATUS_CONFIG[status];
 
   return (
+    // cfg.bg / cfg.color are semantic status colors — intentionally kept hardcoded
     <div style={{
       background: cfg.bg, border: `1px solid ${cfg.color}25`,
       borderRadius: 5, marginBottom: 8, overflow: "hidden",
@@ -308,30 +319,30 @@ function SensorStatusRow({ sensor, index }) {
       </div>
       {open && (
         <div style={{ padding: "0 16px 12px", borderTop: `1px solid ${cfg.color}15` }}>
-        {sensor.hasData ? (
-          <>
-            <div style={{ fontSize: 13, color: cfg.color, marginTop: 8 }}>
-              <div>
-                Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong>
-                {sensor.tempLL != null && sensor.tempUL != null && (
-                  <span style={{ fontSize: 11, color: "#6c757d", marginLeft: 6 }}>
-                    {sensor.tempLL}–{sensor.tempUL}°C
-                  </span>
-                )}
+          {sensor.hasData ? (
+            <>
+              <div style={{ fontSize: 13, color: cfg.color, marginTop: 8 }}>
+                <div>
+                  Temp: <strong>{sensor.temp?.toFixed(2)}°C</strong>
+                  {sensor.tempLL != null && sensor.tempUL != null && (
+                    <span style={{ fontSize: 11, color: "#6c757d", marginLeft: 6 }}>
+                      {sensor.tempLL}–{sensor.tempUL}°C
+                    </span>
+                  )}
+                </div>
+                <div style={{ marginTop: 3 }}>
+                  Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong>
+                  {sensor.humidLL != null && sensor.humidUL != null && (
+                    <span style={{ fontSize: 11, color: "#6c757d", marginLeft: 6 }}>
+                      {sensor.humidLL}–{sensor.humidUL}%
+                    </span>
+                  )}
+                </div>
               </div>
-              <div style={{ marginTop: 3 }}>
-                Humidity: <strong>{sensor.humid?.toFixed(2)}%</strong>
-                {sensor.humidLL != null && sensor.humidUL != null && (
-                  <span style={{ fontSize: 11, color: "#6c757d", marginLeft: 6 }}>
-                    {sensor.humidLL}–{sensor.humidUL}%
-                  </span>
-                )}
-              </div>
-            </div>
-            {sensor.breach && (
-              <div style={{ fontSize: 11, color: "#dc3545", marginTop: 4, fontWeight: 600 }}>⚠ Exceeds limit</div>
-            )}
-          </>
+              {sensor.breach && (
+                <div style={{ fontSize: 11, color: "#dc3545", marginTop: 4, fontWeight: 600 }}>⚠ Exceeds limit</div>
+              )}
+            </>
           ) : (
             <div style={{ fontSize: 12, color: cfg.color, marginTop: 8, opacity: .8 }}>
               No readings available — sensor may be offline.
@@ -350,7 +361,6 @@ function FloorModal({ floor, onClose }) {
   const isBreach    = floorStatus === "breach";
   const isAllGood   = floorStatus === "active";
 
-  // Cache filtered lists to avoid double filtering
   const activeSensors = floor.sensors.filter(s => getSensorStatus(s) === "active");
   const flaggedSensors = floor.sensors
     .filter(s => getSensorStatus(s) !== "active")
@@ -369,25 +379,54 @@ function FloorModal({ floor, onClose }) {
   }, [onClose]);
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.45)", display: "flex", flexDirection: "column", animation: "slideIn .18s ease" }}>
-      <div style={{ flex: 1, background: "#fff", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-        <div style={{ padding: "14px 24px", borderBottom: "1px solid #e9ecef", display: "flex", alignItems: "center", justifyContent: "space-between", background: "#fff" }}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 100, background: "rgba(0,0,0,.65)", display: "flex", flexDirection: "column", animation: "slideIn .18s ease" }}>
+      <div style={{
+        flex: 1,
+        // ✅ was: background: "#fff"
+        background: "var(--card)",
+        display: "flex", flexDirection: "column", overflow: "hidden",
+      }}>
+
+        {/* ── Modal header ── */}
+        <div style={{
+          padding: "14px 24px",
+          // ✅ was: borderBottom: "1px solid #e9ecef", background: "#fff"
+          borderBottom: "1px solid var(--border)",
+          background: "var(--card)",
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+        }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {isBreach && <BreachDot />}
             {!isBreach && !isAllGood && <StatusDot status={floorStatus} size={10} />}
-            <span style={{ fontWeight: 700, fontSize: 18, color: "#212529" }}>{floor.label}</span>
+            {/* ✅ was: color: "#212529" */}
+            <span style={{ fontWeight: 700, fontSize: 18, color: "var(--foreground)" }}>{floor.label}</span>
             <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 5, background: cfg.color, color: "#fff" }}>{summary}</span>
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "#6c757d", lineHeight: 1, padding: "0 4px" }}>×</button>
+          {/* ✅ was: color: "#6c757d" */}
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 24, cursor: "pointer", color: "var(--muted-foreground)", lineHeight: 1, padding: "0 4px" }}>×</button>
         </div>
 
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-          <div style={{ flex: 1, overflow: "hidden", position: "relative", background: "#f8f9fa" }}>
+
+          {/* ── Floor image pane ── */}
+          <div style={{
+            flex: 1, overflow: "hidden", position: "relative",
+            // ✅ was: background: "#f8f9fa"
+            background: "var(--muted)",
+          }}>
             <img src={floor.image} alt={floor.label}
               style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none" }} />
           </div>
 
-          <div style={{ width: 320, flexShrink: 0, borderLeft: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden", background: isAllGood ? "#f0fff8" : "#fafafa" }}>
+          {/* ── Right sidebar ── */}
+          <div style={{
+            width: 320, flexShrink: 0,
+            // ✅ was: borderLeft: "1px solid #e9ecef"
+            borderLeft: "1px solid var(--border)",
+            display: "flex", flexDirection: "column", overflow: "hidden",
+            // ✅ was: background: isAllGood ? "#f0fff8" : "#fafafa"
+            background: "var(--muted)",
+          }}>
             <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
               {isAllGood ? (
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", padding: 24, textAlign: "center", gap: 12 }}>
@@ -406,11 +445,13 @@ function FloorModal({ floor, onClose }) {
                       </span>
                     ))}
                   </div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: "#6c757d", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 12 }}>Sensor Flags</div>
+                  {/* ✅ was: color: "#6c757d" */}
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 12 }}>Sensor Flags</div>
                   {flaggedSensors.map((s, i) => <SensorStatusRow key={s.id} sensor={s} index={i} />)}
                   {activeSensors.length > 0 && (
                     <>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: "#6c757d", textTransform: "uppercase", letterSpacing: ".08em", marginTop: 12, marginBottom: 8 }}>
+                      {/* ✅ was: color: "#6c757d" */}
+                      <div style={{ fontSize: 11, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: ".08em", marginTop: 12, marginBottom: 8 }}>
                         Active ({activeSensors.length})
                       </div>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -425,7 +466,14 @@ function FloorModal({ floor, onClose }) {
                 </>
               )}
             </div>
-            <div style={{ padding: "12px 16px", borderTop: "1px solid #e9ecef", background: "#fff" }}>
+
+            {/* ── "Open Full Map" footer ── */}
+            <div style={{
+              padding: "12px 16px",
+              // ✅ was: borderTop: "1px solid #e9ecef", background: "#fff"
+              borderTop: "1px solid var(--border)",
+              background: "var(--card)",
+            }}>
               <a href={floor.href}
                 style={{ display: "block", textAlign: "center", padding: "10px", borderRadius: 5, background: "#435ebe", color: "#fff", fontWeight: 700, fontSize: 13, textDecoration: "none", cursor: "pointer", transition: "background .15s" }}
                 onMouseEnter={e => { e.currentTarget.style.background = "#3347a8"; }}
@@ -511,9 +559,6 @@ const SENSOR_TABLE_COLUMNS = [
 // ─────────────────────────────────────────────────────────────────────────────
 
 export default function MonitoringPage() {
-  // If cache exists, start with it so switching back shows data instantly.
-  // loading is based on whether any sensor actually has real data yet —
-  // not on timing or cache presence. Modal disappears the moment first readings arrive.
   const hasLiveData = (floorList) => floorList.some(f => f.sensors.some(s => s.hasData));
   const [floors,      setFloors]      = useState(floorsCache ?? ALL_FLOORS);
   const [activeFloor, setActiveFloor] = useState(null);
@@ -522,15 +567,11 @@ export default function MonitoringPage() {
 
   useEffect(() => {
     const fetchAllFloors = async () => {
-      // Cancel any in-flight requests from a previous cycle or navigation
       if (abortRef.current) abortRef.current.abort();
       abortRef.current = new AbortController();
       const signal = abortRef.current.signal;
 
       try {
-        // Fetch sensor statuses first — must complete before building newFloors
-        // so the inactive sensor filter has data on the very first load.
-        // Resets floorsCache too so both stay in sync.
         if (Object.keys(statusCache).length === 0) {
           const statusResults = await Promise.all(
             ALL_FLOORS.map(floor =>
@@ -542,10 +583,9 @@ export default function MonitoringPage() {
             )
           );
           statusResults.flat().forEach(d => { statusCache[d.areaId] = d.status; });
-          floorsCache = null; // reset so newFloors rebuilds with fresh status filter
+          floorsCache = null;
         }
 
-        // Fetch all floors in parallel — one request per floor slug
         const results = await Promise.all(
           ALL_FLOORS.map(floor =>
             axios.get(`${API_BASE}/sensors/readings/current`, {
@@ -553,34 +593,28 @@ export default function MonitoringPage() {
               signal,
             }).then(res => ({ floorId: floor.id, data: res.data.data }))
               .catch(err => {
-                // Ignore abort errors — page was navigated away
                 if (axios.isCancel?.(err) || err?.name === "CanceledError") return null;
                 return { floorId: floor.id, data: [] };
               })
           )
         );
 
-        // If any request was aborted, bail out — don't update state
         if (results.some(r => r === null)) return;
 
-        // Build a map: floorId → { [areaId]: liveReading }
         const liveByFloor = {};
         results.forEach(({ floorId, data }) => {
           liveByFloor[floorId] = {};
           data.forEach(d => { liveByFloor[floorId][d.areaId] = d; });
         });
 
-        // Merge live data into floor/sensor structure.
-        // Inactive sensors (per statusCache) are filtered out entirely.
         const newFloors = ALL_FLOORS.map(floor => ({
           ...floor,
           sensors: floor.sensors
-            .filter(sensor => statusCache[sensor.areaId] !== "Inactive") // hide inactive sensors
+            .filter(sensor => statusCache[sensor.areaId] !== "Inactive")
             .map(sensor => {
               const live = liveByFloor[floor.id]?.[sensor.areaId];
               if (!live) return { ...sensor, hasData: false, breach: false, temp: null, humid: null, lastSeen: null, limits: null };
 
-              // Respect INACTIVE_AREAS — suppress breach for inactive sensors
               const isInactive = INACTIVE_AREAS.has(sensor.areaId);
               const breach = live.status === "breach" && !isInactive;
 
@@ -600,14 +634,11 @@ export default function MonitoringPage() {
             }),
         }));
 
-        // Update cache so next navigation shows this data instantly
         floorsCache = newFloors;
         setFloors(newFloors);
 
-        // Hide loading modal once any sensor has real data
         if (hasLiveData(newFloors)) setLoading(false);
 
-        // If modal is open, keep it in sync with fresh data
         setActiveFloor(prev => {
           if (!prev) return null;
           return newFloors.find(f => f.id === prev.id) ?? prev;
@@ -616,7 +647,6 @@ export default function MonitoringPage() {
       } catch (err) {
         console.error("Failed to fetch monitoring data:", err);
       }
-      // No finally needed — loading state is managed by hasLiveData check
     };
 
     fetchAllFloors();
@@ -624,12 +654,10 @@ export default function MonitoringPage() {
 
     return () => {
       clearInterval(interval);
-      // Cancel any in-flight requests when navigating away
       if (abortRef.current) abortRef.current.abort();
     };
   }, []);
 
-  // Build flat table data from live floors state
   const tableData = floors.flatMap(floor =>
     floor.sensors.map(sensor => ({
       id:       `${floor.id}__${sensor.id}`,
@@ -650,7 +678,6 @@ export default function MonitoringPage() {
   const breachFloorCount = floors.filter(f => getFloorStatus(f) === "breach").length;
 
   const handleCardClick = (floor) => {
-    // Pass the live floor object (not stale ALL_FLOORS entry)
     const live = floors.find(f => f.id === floor.id) ?? floor;
     setActiveFloor(live);
   };
@@ -659,7 +686,6 @@ export default function MonitoringPage() {
     <>
       <style>{GLOBAL_STYLES}</style>
 
-      {/* ── Loading overlay — blocks page on first fetch only ── */}
       {loading && <LoadingOverlay />}
 
       <div style={{ minHeight: "100vh", overflowX: "hidden" }}>
@@ -694,19 +720,19 @@ export default function MonitoringPage() {
           </div>
 
           {/* ── Activity Log ── */}
-          <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "20px 24px" }}>
+          {/* ✅ was: background: "#fff", border: "1px solid #e9ecef" */}
+          <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 5, padding: "20px 24px" }}>
             <p className="font-bold mb-4">Activity Log</p>
             {tableData.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center" style={{ padding: "24px 0" }}>No sensor data available.</p>
             ) : (
-              <DataTable columns={SENSOR_TABLE_COLUMNS} data={tableData} />
+              <DataTable columns={SENSOR_TABLE_COLUMNS} data={tableData} /> 
             )}
           </div>
 
         </div>
       </div>
 
-      {/* ── Floor modal overlay ── */}
       {activeFloor && (
         <FloorModal floor={activeFloor} onClose={() => setActiveFloor(null)} />
       )}

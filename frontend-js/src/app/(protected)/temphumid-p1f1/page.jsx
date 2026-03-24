@@ -116,11 +116,11 @@ function LoadingOverlay() {
     <>
       <style>{SPINNER_STYLE}</style>
       <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid #e9ecef", borderTop: "4px solid #435ebe", animation: "spinLoader 0.8s linear infinite" }} />
+        <div style={{ background: "var(--card)", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid var(--border)", borderTop: "4px solid #435ebe", animation: "spinLoader 0.8s linear infinite" }} />
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontWeight: 700, fontSize: 15, color: "#212529", margin: 0 }}>Fetching sensor data</p>
-            <p style={{ fontSize: 12, color: "#6c757d", marginTop: 6 }}>Please wait while live readings are loaded…</p>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "var(--foreground)", margin: 0 }}>Fetching sensor data</p>
+            <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 6 }}>Please wait while live readings are loaded…</p>
           </div>
         </div>
       </div>
@@ -195,16 +195,20 @@ function DessicatorZoneMarker({ open, onToggle, sensors }) {
   const dotColor    = STATUS_STYLES[zoneStatus].border;
   return (
     <div onClick={onToggle} style={{ position: "absolute", left: `${DESSICATOR_ZONE.x}%`, top: `${DESSICATOR_ZONE.y}%`, transform: "translate(-50%, -50%)", zIndex: open ? 25 : 15, cursor: "pointer" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, background: open ? "#435ebe" : "#fff", border: `2px solid ${open ? "#435ebe" : "#adb5bd"}`, borderRadius: 6, padding: "3px 7px", boxShadow: "0 2px 8px rgba(0,0,0,.2)", whiteSpace: "nowrap", transition: "all .15s" }}>
+      {/* ✅ was: background: open ? "#435ebe" : "#fff", border: `2px solid ${open ? "#435ebe" : "#adb5bd"}` */}
+      <div style={{ display: "flex", alignItems: "center", gap: 4, background: open ? "#435ebe" : "var(--card)", border: `2px solid ${open ? "#435ebe" : "var(--border)"}`, borderRadius: 6, padding: "3px 7px", boxShadow: "0 2px 8px rgba(0,0,0,.2)", whiteSpace: "nowrap", transition: "all .15s" }}>
         <div style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0 }} />
-        <span style={{ fontSize: 10, fontWeight: 700, color: open ? "#fff" : "#495057", letterSpacing: ".04em" }}>DESSICATORS</span>
+        {/* ✅ was: color: open ? "#fff" : "#495057" */}
+        <span style={{ fontSize: 10, fontWeight: 700, color: open ? "#fff" : "var(--foreground)", letterSpacing: ".04em" }}>DESSICATORS</span>
         {breachCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, background: "#dc3545", color: "#fff", borderRadius: 8, padding: "1px 4px", marginLeft: 2 }}>{breachCount}</span>}
       </div>
       {open && (
-        <div style={{ position: "absolute", bottom: "calc(100% + -150px)", left: "-32%", transform: "translateY(-50%)", zIndex: 35, background: "#fff", border: "1.5px solid #dee2e6", borderRadius: 10, padding: "10px 12px", boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 220, pointerEvents: "none" }}>
+        <div style={{ position: "absolute", bottom: "calc(100% + -150px)", left: "-32%", transform: "translateY(-50%)", zIndex: 35, background: "var(--card)", border: "1.5px solid var(--border)", borderRadius: 10, padding: "10px 12px", boxShadow: "0 6px 20px rgba(0,0,0,.18)", minWidth: 220, pointerEvents: "none" }}>
+          {/* ✅ was: border top/bottom arrow colors "#dee2e6" / "#fff" — kept as-is: CSS triangle tricks need literal colors */}
           <div style={{ position: "absolute", bottom: -8, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "7px solid transparent", borderRight: "7px solid transparent", borderTop: "8px solid #dee2e6" }} />
           <div style={{ position: "absolute", bottom: -6, left: "50%", transform: "translateX(-50%)", width: 0, height: 0, borderLeft: "6px solid transparent", borderRight: "6px solid transparent", borderTop: "7px solid #fff" }} />
-          <div style={{ fontSize: 10, fontWeight: 700, color: "#adb5bd", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>Dessicators</div>
+          {/* ✅ was: color: "#adb5bd" */}
+          <div style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 8 }}>Dessicators</div>
           {sensors.map(s => {
             const st  = getPaneStatus(s);
             const ss  = STATUS_STYLES[st];
@@ -232,7 +236,7 @@ function SensorListItem({ sensor, selected, onToggle }) {
   const statusDot = STATUS_STYLES[status].dot;
   return (
     <div onClick={() => onToggle(sensor.id)} className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer" style={{ background: "transparent", userSelect: "none" }}
-      onMouseEnter={e => { e.currentTarget.style.background = "#f3f4f6"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+      onMouseEnter={e => { e.currentTarget.style.background = "var(--accent)"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
       <div style={{ width: 16, height: 16, flexShrink: 0, border: `2px solid ${selected ? "#435ebe" : "#adb5bd"}`, borderRadius: 3, background: selected ? "#435ebe" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {selected && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
       </div>
@@ -271,7 +275,7 @@ const LEGEND = [
   { color: STATUS_STYLES["ok"].dot,      label: "Within limits"  },
   { color: STATUS_STYLES["breach"].dot,  label: "Limit breached" },
   { color: STATUS_STYLES["no-data"].dot, label: "No data"        },
-  { color: null, label: "Inactive area", isText: true            },
+  //{ color: null, label: "Inactive area", isText: true            },
 ];
 
 
@@ -374,8 +378,10 @@ export default function P1F1MapPage() {
 
         {/* ── Sidebar ── */}
         <div style={{ paddingLeft: 20, paddingTop: 20, paddingBottom: 20, boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
-          <aside style={{ width: 260, flexShrink: 0, background: "#fff", borderRight: "1px solid #e9ecef", border: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
-            <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
+          {/* ✅ was: background: "#fff", borderRight: "1px solid #e9ecef", border: "1px solid #e9ecef" */}
+          <aside style={{ width: 260, flexShrink: 0, background: "var(--card)", borderRight: "1px solid var(--border)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
+            {/* ✅ was: borderBottom: "1px solid #e9ecef" */}
+            <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
               <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>
                 {allSelected ? "Deselect All" : "Select All"}
               </Button>
@@ -384,9 +390,10 @@ export default function P1F1MapPage() {
               <div className="text-sm px-1 pt-2 pb-1">Line Name</div>
               {visibleSensors.map(s => <SensorListItem key={s.id} sensor={s} selected={selectedIds.has(s.id)} onToggle={toggle} />)}
             </div>
-            <div style={{ padding: "10px 20px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
+            {/* ✅ was: borderTop: "1px solid #e9ecef" */}
+            <div style={{ padding: "10px 20px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 4 }}>
               {LEGEND.map(({ color, label, isText }) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted-foreground)" }}>
                   {isText ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe082", display: "block", flexShrink: 0 }} /> : <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />}
                   {label}
                 </div>
@@ -400,6 +407,7 @@ export default function P1F1MapPage() {
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 20, overflow: "hidden", minHeight: 0, borderRadius: 5 }}>
 
             {/* Floor plan with overlaid markers */}
+            {/* ✅ was: border: "1px solid #e9ecef" */}
             <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid #e9ecef", minHeight: 0 }}
               onClick={e => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}>
               <img src={FLOOR_PLAN_IMAGE} alt="P1F1 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
@@ -408,7 +416,8 @@ export default function P1F1MapPage() {
             </div>
 
             {/* Dessicator bottom row cards */}
-            <div style={{ background: "#fff", border: "1px solid #e9ecef", borderRadius: 5, padding: "10px 16px", flexShrink: 0 }}>
+            {/* ✅ was: background: "#fff", border: "1px solid #e9ecef" */}
+            <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 5, padding: "10px 16px", flexShrink: 0 }}>
               <div className="text-sm mb-2">Dessicators</div>
               <div style={{ display: "flex", gap: 10, overflowX: "auto" }}>
                 {visibleDessSensors.map(s => <DessicatorCard key={s.id} sensor={s} />)}
