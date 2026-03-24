@@ -65,11 +65,11 @@ function LoadingOverlay() {
     <>
       <style>{SPINNER_STYLE}</style>
       <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid #e9ecef", borderTop: "4px solid #435ebe", animation: "spinLoader 0.8s linear infinite" }} />
+        <div style={{ background: "var(--card)", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid var(--border)", borderTop: "4px solid var(--primary)", animation: "spinLoader 0.8s linear infinite" }} />
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontWeight: 700, fontSize: 15, color: "#212529", margin: 0 }}>Fetching sensor data</p>
-            <p style={{ fontSize: 12, color: "#6c757d", marginTop: 6 }}>Please wait while live readings are loaded…</p>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "var(--foreground)", margin: 0 }}>Fetching sensor data</p>
+            <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 6 }}>Please wait while live readings are loaded…</p>
           </div>
         </div>
       </div>
@@ -128,7 +128,7 @@ function SensorMarker({ sensor, selected, onToggle }) {
 function SensorListItem({ sensor, selected, onToggle }) {
   const status = getPaneStatus(sensor); const statusDot = STATUS_STYLES[status].dot;
   return (
-    <div onClick={() => onToggle(sensor.id)} className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer" style={{ background: "transparent", userSelect: "none" }} onMouseEnter={e => { e.currentTarget.style.background = "#f3f4f6"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
+    <div onClick={() => onToggle(sensor.id)} className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer" style={{ background: "transparent", userSelect: "none" }} onMouseEnter={e => { e.currentTarget.style.background = "var(--accent)"; }} onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
       <div style={{ width: 16, height: 16, flexShrink: 0, border: `2px solid ${selected ? "#435ebe" : "#adb5bd"}`, borderRadius: 3, background: selected ? "#435ebe" : "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
         {selected && <span style={{ color: "#fff", fontSize: 9, lineHeight: 1 }}>✓</span>}
       </div>
@@ -146,7 +146,7 @@ const LEGEND = [
   { color: STATUS_STYLES["ok"].dot,      label: "Within limits"  },
   { color: STATUS_STYLES["breach"].dot,  label: "Limit breached" },
   { color: STATUS_STYLES["no-data"].dot, label: "No data"        },
-  { color: null, label: "Inactive area", isText: true            },
+  //{ color: null, label: "Inactive area", isText: true            },
 ];
 
 
@@ -235,17 +235,17 @@ export default function WHMapPage() {
 
         {/* ── Sidebar ── */}
         <div style={{ paddingLeft: 20, paddingTop: 20, paddingBottom: 20, boxSizing: "border-box", display: "flex", flexDirection: "column" }}>
-          <aside style={{ width: 260, flexShrink: 0, background: "#fff", border: "1px solid #e9ecef", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
-            <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 8 }}>
+          <aside style={{ width: 260, flexShrink: 0, background: "var(--card)", border: "1px solid var(--border)", display: "flex", flexDirection: "column", overflow: "hidden", borderRadius: 5 }}>
+            <div style={{ padding: "12px 16px 12px", borderBottom: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 8 }}>
               <Button type="button" size="default" variant={allSelected ? "outline" : "default"} className="w-full flex items-center justify-center gap-1.5 font-bold text-sm cursor-pointer" onClick={toggleAll}>{allSelected ? "Deselect All" : "Select All"}</Button>
             </div>
             <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px" }}>
               <div className="text-sm px-1 pt-2 pb-1">Line Name</div>
               {visibleSensors.map(s => <SensorListItem key={s.id} sensor={s} selected={selectedIds.has(s.id)} onToggle={toggle} />)}
             </div>
-            <div style={{ padding: "10px 20px 16px", borderTop: "1px solid #e9ecef", display: "flex", flexDirection: "column", gap: 4 }}>
+            <div style={{ padding: "10px 20px 16px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 4 }}>
               {LEGEND.map(({ color, label, isText }) => (
-                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "#6c757d" }}>
+                <div key={label} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, color: "var(--muted-foreground)" }}>
                   {isText ? <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe082", display: "block", flexShrink: 0 }} /> : <div style={{ width: 8, height: 8, borderRadius: "50%", background: color, flexShrink: 0 }} />}
                   {label}
                 </div>

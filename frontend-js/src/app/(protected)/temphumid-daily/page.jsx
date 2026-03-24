@@ -160,6 +160,14 @@ const fmtDatetime = (t) => {
 const filterSundays = (times, includeSundays) =>
   includeSundays ? times : times.filter(t => new Date(t).getDay() !== 0);
 
+/**
+ * Read a CSS custom property from the document root at call time.
+ * Used to pass theme-aware colors into Chart.js (which can't read CSS vars directly).
+ */
+function getCSSVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 3: LOADING OVERLAY
@@ -172,11 +180,12 @@ function LoadingOverlay() {
     <>
       <style>{SPINNER_STYLE}</style>
       <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ background: "#fff", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
-          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid #e9ecef", borderTop: "4px solid #435ebe", animation: "spinLoader 0.8s linear infinite" }} />
+        <div style={{ background: "var(--card)", borderRadius: 10, padding: "36px 48px", display: "flex", flexDirection: "column", alignItems: "center", gap: 20, boxShadow: "0 8px 40px rgba(0,0,0,.18)", minWidth: 260 }}>
+          {/* ✅ was: border: "4px solid #e9ecef" — now uses CSS var so it adapts in dark mode */}
+          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid var(--border)", borderTop: "4px solid #435ebe", animation: "spinLoader 0.8s linear infinite" }} />
           <div style={{ textAlign: "center" }}>
-            <p style={{ fontWeight: 700, fontSize: 15, color: "#212529", margin: 0 }}>Fetching sensor data</p>
-            <p style={{ fontSize: 12, color: "#6c757d", marginTop: 6 }}>Please wait while live readings are loaded…</p>
+            <p style={{ fontWeight: 700, fontSize: 15, color: "var(--foreground)", margin: 0 }}>Fetching sensor data</p>
+            <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 6 }}>Please wait while live readings are loaded…</p>
           </div>
         </div>
       </div>
@@ -267,6 +276,12 @@ const SensorLineChart = memo(function SensorLineChart({
     if (!window.Chart || !cvs.current) return;
     if (inst.current) inst.current.destroy();
 
+    // ✅ Resolve CSS vars at chart-build time so axes adapt to light/dark theme.
+    // Chart.js can't read CSS custom properties directly — we resolve them once
+    // from the computed style and pass the resolved color strings in.
+    const mutedFg   = getCSSVar("--muted-foreground"); // axis labels & titles
+    const borderClr = getCSSVar("--border");           // grid lines
+
     const limitDatasets = limitProfiles.flatMap((profile) => {
       const ulVal  = profile[limitKeyUL];
       const llVal  = profile[limitKeyLL];
@@ -312,13 +327,15 @@ const SensorLineChart = memo(function SensorLineChart({
         },
         scales: {
           x: {
-            ticks: { maxTicksLimit: 12, font: { size: 10 }, color: "#6c757d", maxRotation: 30 },
-            grid:  { color: "rgba(0,0,0,.06)" },
+            // ✅ was: color: "#6c757d", grid: "rgba(0,0,0,.06)" — now uses resolved CSS vars
+            ticks: { maxTicksLimit: 12, font: { size: 10 }, color: mutedFg, maxRotation: 30 },
+            grid:  { color: borderClr },
           },
           y: {
-            title: { display: true, text: yLabel, font: { size: 11 }, color: "#6c757d" },
-            ticks: { font: { size: 10 }, color: "#6c757d" },
-            grid:  { color: "rgba(0,0,0,.06)" },
+            title: { display: true, text: yLabel, font: { size: 11 }, color: mutedFg },
+            // ✅ was: color: "#6c757d", grid: "rgba(0,0,0,.06)" — now uses resolved CSS vars
+            ticks: { font: { size: 10 }, color: mutedFg },
+            grid:  { color: borderClr },
           },
         },
       },
@@ -747,7 +764,7 @@ export default function Dashboard() {
 
       <StatCards onFirstLoad={() => setSummaryLoading(false)} />
 
-      <Card style={{ border: "1px solid #e9ecef" }}>
+      <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-4 pb-2">
           <div>
             <CardTitle className="text-base">Overview</CardTitle>
@@ -814,8 +831,8 @@ export default function Dashboard() {
 
             {applied && !noData && !apiError && (
               <>
-                {/* Sunday toggle */}
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "#6c757d", cursor: "pointer", userSelect: "none" }}>
+                {/* ✅ was: color: "#6c757d" — now uses Tailwind token so it adapts in dark mode */}
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
                   <input
                     type="checkbox"
                     checked={includeSundays}
@@ -826,7 +843,8 @@ export default function Dashboard() {
                 </label>
 
                 {/* Daily / Monthly toggle */}
-                <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid #e9ecef", background: "#f2f7ff", borderRadius: 8, padding: 3 }}>
+                {/* ✅ was: border: "1px solid #e9ecef", background: "#f2f7ff" — now uses CSS vars */}
+                <div style={{ display: "flex", alignItems: "center", gap: 2, border: "1px solid var(--border)", background: "var(--muted)", borderRadius: 8, padding: 3 }}>
                   {["daily", "monthly"].map((v) => (
                     <button
                       key={v}
@@ -834,7 +852,10 @@ export default function Dashboard() {
                       style={{
                         padding: "4px 14px", borderRadius: 6, border: "none", cursor: "pointer",
                         fontSize: 12, fontWeight: chartView === v ? 600 : 400,
-                        background: chartView === v ? "#fff" : "transparent",
+                        // ✅ Active pill: was background: "#fff" — now uses var(--card) for dark mode
+                        background: chartView === v ? "var(--card)" : "transparent",
+                        // ✅ Active text: was inherited dark — now uses var(--foreground)
+                        color: chartView === v ? "var(--foreground)" : "var(--muted-foreground)",
                         boxShadow: chartView === v ? "0 1px 3px rgba(0,0,0,.10)" : "none",
                         transition: "all .15s",
                       }}
@@ -866,6 +887,7 @@ export default function Dashboard() {
               </div>
             ) : apiError ? (
               <div className="flex flex-col items-center justify-center py-16">
+                {/* Error state: semantic #dc3545 is intentionally kept — matches STATUS_CONFIG breach color */}
                 <div style={{ background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "12px 20px" }} className="text-sm text-destructive text-center max-w-md">
                   {apiError}
                 </div>
