@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { CardSkeleton } from "@/components/custom/CardSkeleton";
 import axios from "@/lib/axios";
 
 const API_BASE = '/api/temphumid';
@@ -256,15 +257,22 @@ export default function WHMapPage() {
 
         {/* ── Map area ── */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 20, overflow: "hidden", minHeight: 0 }}>
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 20, overflow: "hidden", minHeight: 0, borderRadius: 5 }}>
+
+             {/* Floor plan with overlaid markers — skeleton shown while loading */}
+            {loading ? (
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <CardSkeleton />
+              </div>
+            ) : (
             <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid #e9ecef", minHeight: 0 }}>
-              <img src={FLOOR_PLAN_IMAGE} alt="Warehouse Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
+              <img src={FLOOR_PLAN_IMAGE} alt="P1F2 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
               {visibleSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
             </div>
-          </div>
+          )}
         </div>
       </div>
-
     </div>
+  </div>
   );
 }

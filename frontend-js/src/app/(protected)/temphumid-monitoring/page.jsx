@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { DataTable } from "@/components/custom/DataTable";
+import { CardSkeleton } from "@/components/custom/CardSkeleton";
 import axios from "@/lib/axios";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -712,11 +713,14 @@ export default function MonitoringPage() {
 
         <div style={{ padding: "14px 24px", display: "flex", flexDirection: "column", gap: 28 }}>
 
-          {/* ── Floor grid ── */}
+          {/* ── Floor grid — skeletons while loading, real cards once data arrives ── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
-            {floors.map(floor => (
-              <FloorCard key={floor.id} floor={floor} onClick={handleCardClick} />
-            ))}
+            {loading
+              ? Array.from({ length: ALL_FLOORS.length }).map((_, i) => <CardSkeleton key={i} />)
+              : floors.map(floor => (
+                  <FloorCard key={floor.id} floor={floor} onClick={handleCardClick} />
+                ))
+            }
           </div>
 
           {/* ── Activity Log ── */}
@@ -726,7 +730,7 @@ export default function MonitoringPage() {
             {tableData.length === 0 ? (
               <p className="text-sm text-muted-foreground text-center" style={{ padding: "24px 0" }}>No sensor data available.</p>
             ) : (
-              <DataTable columns={SENSOR_TABLE_COLUMNS} data={tableData} /> 
+              <DataTable columns={SENSOR_TABLE_COLUMNS} data={tableData} />
             )}
           </div>
 

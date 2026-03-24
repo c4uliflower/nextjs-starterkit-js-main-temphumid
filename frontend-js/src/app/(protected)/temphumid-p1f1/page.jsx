@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
+import { CardSkeleton } from "@/components/custom/CardSkeleton";
 import axios from "@/lib/axios";
 
 const API_BASE = '/api/temphumid';
@@ -406,21 +407,32 @@ export default function P1F1MapPage() {
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 20, overflow: "hidden", minHeight: 0, borderRadius: 5 }}>
 
-            {/* Floor plan with overlaid markers */}
-            {/* ✅ was: border: "1px solid #e9ecef" */}
-            <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid #e9ecef", minHeight: 0 }}
-              onClick={e => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}>
-              <img src={FLOOR_PLAN_IMAGE} alt="P1F1 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
-              {visibleSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
-              <DessicatorZoneMarker open={dessOpen} onToggle={() => setDessOpen(v => !v)} sensors={visibleDessSensors} />
-            </div>
+            {/* Floor plan with overlaid markers — skeleton shown while loading */}
+            {loading ? (
+              <div style={{ flex: 1, minHeight: 0 }}>
+                <CardSkeleton />
+              </div>
+            ) : (
+              <div style={{ flex: 1, position: "relative", overflow: "hidden", borderRadius: 5, background: "transparent", border: "1px solid var(--border)", minHeight: 0 }}
+                onClick={e => { if (e.target === e.currentTarget || e.target.tagName === "IMG") setDessOpen(false); }}>
+                <img src={FLOOR_PLAN_IMAGE} alt="P1F1 Floor Plan" style={{ width: "100%", height: "100%", objectFit: "contain", display: "block", userSelect: "none", pointerEvents: "none" }} />
+                {visibleSensors.map(sensor => <SensorMarker key={sensor.id} sensor={sensor} selected={selectedIds.has(sensor.id)} onToggle={toggle} />)}
+                <DessicatorZoneMarker open={dessOpen} onToggle={() => setDessOpen(v => !v)} sensors={visibleDessSensors} />
+              </div>
+            )}
 
-            {/* Dessicator bottom row cards */}
-            {/* ✅ was: background: "#fff", border: "1px solid #e9ecef" */}
+            {/* Dessicator bottom row cards — skeletons shown while loading */}
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 5, padding: "10px 16px", flexShrink: 0 }}>
               <div className="text-sm mb-2">Dessicators</div>
               <div style={{ display: "flex", gap: 10, overflowX: "auto" }}>
-                {visibleDessSensors.map(s => <DessicatorCard key={s.id} sensor={s} />)}
+                {loading
+                  ? DESSICATOR_SENSORS.map((_, i) => (
+                      <div key={i} style={{ flex: 1, minWidth: 0 }}>
+                        <CardSkeleton />
+                      </div>
+                    ))
+                  : visibleDessSensors.map(s => <DessicatorCard key={s.id} sensor={s} />)
+                }
               </div>
             </div>
 
