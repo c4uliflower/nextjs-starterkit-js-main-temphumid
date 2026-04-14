@@ -253,7 +253,7 @@ const StatCards = memo(function StatCards({ onFirstLoad }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       <DashboardCard value={fmtTemp(summary.avgTemperature)}     label="Avg. Temperature" icon={Thermometer}   variant="primary"     />
-      <DashboardCard value={fmtHumid(summary.avgHumidity)}       label="Avg. Humidity"    icon={Droplets}      variant="success"     />
+      <DashboardCard value={fmtHumid(summary.avgHumidity)}       label="Avg. Humidity"    icon={Droplets}      variant="info"     />
       <DashboardCard value={fmtCount(summary.activeSensorCount)} label="Active Sensors"   icon={Radio}         variant="warning"     />
       <DashboardCard value={fmtCount(summary.breachCount)}       label="Critical Alerts"  icon={TriangleAlert} variant="destructive" />
     </div>
@@ -519,7 +519,7 @@ export default function Dashboard() {
 
   // ── View toggle ─────────────────────────────────────────────────────────────
   const [chartView,      setChartView]      = useState("daily");
-  const [includeSundays, setIncludeSundays] = useState(false);
+  const [includeSundays, setIncludeSundays] = useState(true);
   const rawDataRef                          = useRef(null); // filtered sortedTimes + perSensor
   const allTimesRef                         = useRef(null); // unfiltered sortedTimes — needed to restore Sundays
 
