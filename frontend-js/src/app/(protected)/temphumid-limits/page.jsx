@@ -92,6 +92,11 @@ let limitsCache = {};
 // ─────────────────────────────────────────────────────────────────────────────
 
 const SPINNER_STYLE = `@keyframes spinLoader { to { transform: rotate(360deg); } }`;
+const CHEVRON_STYLE = `
+  .floor-chevron { transition: transform 0.2s ease; }
+  [data-state="open"] .floor-chevron { transform: rotate(180deg); }
+  [data-state="closed"] .floor-chevron { transform: rotate(0deg); }
+`;
 
 // Full-screen loading overlay — shown only on the very first data fetch.
 // Subsequent visits restore from cache instantly.
@@ -151,113 +156,117 @@ const NumField = ({ sensorId, fieldKey, label, unit, draft, errors, onSetField, 
 // One AccordionItem per floor — blue trigger header, vertical sensor rows inside.
 // Clicking a sensor row selects it and populates the edit panel on the right.
 // type="single" on the root means opening one floor closes the others.
-function FloorAccordionItem({ floor, groups, activeId, saving, isChanged, hasRowError, onSelect }) {
+// sensorStatuses: { [areaId]: 'Active' | 'Inactive' } — from sharedStatusCache
+function FloorAccordionItem({ floor, groups, activeId, saving, isChanged, hasRowError, onSelect, sensorStatuses }) {
 
-  // Count changed and errored sensors to show summary badges in the trigger
   const floorSensors = groups.flatMap(g => g.sensors);
   const changedCount = floorSensors.filter(s => isChanged(s.id)).length;
   const errorCount   = floorSensors.filter(s => hasRowError(s.id)).length;
 
   return (
-    <AccordionItem value={floor.slug} className="border-0">
+    <>
+      <style>{CHEVRON_STYLE}</style>
+      <AccordionItem value={floor.slug} className="border-0">
 
-      {/* Blue floor trigger — chevron inherits white color via [&>svg] override */}
-      <AccordionTrigger
-        className="hover:no-underline px-0 py-0 pr-0 rounded-none [&>svg]:hidden"
-        style={{ background: "none" }}
-      >
-        <div style={{
-          width: "100%", padding: "11px 16px",
-          background: "#435ebe", borderBottom: "1px solid #3550a8",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div>
-            <p style={{ fontWeight: 700, fontSize: 13, color: "#fff", margin: 0 }}>{floor.label}</p>
-            <p style={{ fontSize: 10, color: "rgba(255,255,255,.6)", margin: 0, letterSpacing: ".05em", textTransform: "uppercase" }}>
-              {floor.subLabel} · {floorSensors.length} sensor{floorSensors.length !== 1 ? "s" : ""}
-            </p>
-          </div>
-          {/* Summary badges — changed and error counts */}
-          <div style={{ display: "flex", gap: 6, alignItems: "center", marginRight: 8 }}>
-            {errorCount > 0 && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "#dc3545", borderRadius: 5, padding: "2px 7px" }}>
-                {errorCount} error{errorCount !== 1 ? "s" : ""}
-              </span>
-            )}
-            {changedCount > 0 && !errorCount && (
-              <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "rgba(255,255,255,.2)", borderRadius: 5, padding: "2px 7px" }}>
-                {changedCount} changed
-              </span>
-            )}
-          </div>
-        </div>
-      </AccordionTrigger>
-
-      {/* Sensor rows — one per row, grouped if floor has multiple groups (P1F1) */}
-      <AccordionContent className="pb-0">
-        <div style={{ background: "var(--card)" }}>
-          {groups.map(({ group, sensors }) => (
-            <div key={group}>
-
-              {/* Subgroup label — only shown when a floor has more than one group (P1F1) */}
-              {groups.length > 1 && (
-                <div style={{ padding: "7px 16px 6px", borderBottom: "1px solid var(--border)", background: "var(--muted)" }}
-                  className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-                  {group}
-                </div>
-              )}
-
-              {/* Sensor rows — full-width clickable rows, one sensor per row */}
-              {sensors.map(sensor => {
-                const selected = sensor.id === activeId;
-                const changed  = isChanged(sensor.id);
-                const rowError = hasRowError(sensor.id);
-
-                return (
-                  <div
-                    key={sensor.id}
-                    onClick={() => !saving && onSelect(sensor.id)}
-                    style={{
-                      padding: "9px 16px",
-                      cursor: saving ? "default" : "`po`inter",
-                      background: selected ? "rgba(67,94,190,.10)" : "transparent",
-                      borderLeft: `3px solid ${selected ? "#435ebe" : "transparent"}`,
-                      borderBottom: "1px solid var(--border)",
-                      display: "flex", alignItems: "center", justifyContent: "space-between",
-                      transition: "background .1s",
-                    }}
-                  >
-                    {/* Sensor name */}
-                    <span style={{
-                      fontSize: 13,
-                      fontWeight: selected ? 700 : 400,
-                      color: rowError ? "#dc3545" : changed ? "#fd7e14" : "var(--foreground)",
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}>
-                      {sensor.lineName}
-                    </span>
-
-                    {/* Right indicators */}
-                    <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      {/* Orange dot — unsaved change indicator */}
-                      {!rowError && changed && (
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fd7e14", display: "block" }} title="Unsaved change" />
-                      )}
-                      {/* Red dot — validation error indicator */}
-                      {rowError && (
-                        <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#dc3545", display: "block" }} title="Validation error" />
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-
+        <AccordionTrigger
+          className="hover:no-underline px-0 py-0 pr-0 rounded-none [&>svg]:hidden"
+          style={{ background: "none" }}
+        >
+          <div style={{
+            width: "100%", padding: "11px 16px",
+            borderBottom: "1px solid var(--border)", borderTop: "1px solid var(--border)", background: "var(--card)",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+          }}>
+            <div>
+              <p style={{ margin: 0 }}>{floor.label}</p>
+              <p style={{ fontSize: 10, color: "var(--muted-foreground)", margin: 0, letterSpacing: ".05em", textTransform: "uppercase" }}>
+                {floor.subLabel} · {floorSensors.length} sensor{floorSensors.length !== 1 ? "s" : ""}
+              </p>
             </div>
-          ))}
-        </div>
-      </AccordionContent>
+            {/* Summary badges + chevron */}
+            <div style={{ display: "flex", gap: 6, alignItems: "center", marginRight: 8 }}>
+              {errorCount > 0 && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "#dc3545", borderRadius: 5, padding: "2px 7px" }}>
+                  {errorCount} error{errorCount !== 1 ? "s" : ""}
+                </span>
+              )}
+              {changedCount > 0 && !errorCount && (
+                <span style={{ fontSize: 10, fontWeight: 700, color: "#fff", background: "rgba(255,255,255,.2)", borderRadius: 5, padding: "2px 7px" }}>
+                  {changedCount} changed
+                </span>
+              )}
+              <svg
+                className="floor-chevron"
+                width="14" height="14" viewBox="0 0 24 24"
+                fill="none" stroke="var(--foreground)" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </div>
+          </div>
+        </AccordionTrigger>
 
-    </AccordionItem>
+        <AccordionContent className="pb-0">
+          <div style={{ background: "var(--card)" }}>
+            {groups.map(({ group, sensors }) => (
+              <div key={group}>
+                {groups.length > 1 && (
+                  <div style={{ padding: "7px 16px 6px" }}
+                    className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
+                    {group}
+                  </div>
+                )}
+                {sensors.map(sensor => {
+                  const selected = sensor.id === activeId;
+                  const changed  = isChanged(sensor.id);
+                  const rowError = hasRowError(sensor.id);
+                  const isActive = sensorStatuses[sensor.areaId] === "Active";
+                  return (
+                    <div
+                      key={sensor.id}
+                      onClick={() => !saving && onSelect(sensor.id)}
+                      style={{
+                        padding: "9px 16px",
+                        cursor: saving ? "default" : "pointer",
+                        background: selected ? "rgba(67,94,190,.10)" : "transparent",
+                        borderLeft: `3px solid ${selected ? "#435ebe" : "transparent"}`,
+                        display: "flex", alignItems: "center", justifyContent: "space-between",
+                        transition: "background .1s",
+                      }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, overflow: "hidden" }}>
+                        <div style={{
+                          width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                          background: isActive ? "#00c9a7" : "#adb5bd",
+                        }} />
+                        <span style={{
+                          fontSize: 13,
+                          fontWeight: selected ? 700 : 400,
+                          color: rowError ? "#dc3545" : changed ? "#fd7e14" : "var(--foreground)",
+                          overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                        }}>
+                          {sensor.lineName}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                        {!rowError && changed && (
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#fd7e14", display: "block" }} title="Unsaved change" />
+                        )}
+                        {rowError && (
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#dc3545", display: "block" }} title="Validation error" />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </AccordionContent>
+
+      </AccordionItem>
+    </>
   );
 }
 
@@ -268,9 +277,8 @@ function FloorAccordionItem({ floor, groups, activeId, saving, isChanged, hasRow
 
 // Right-hand content area — renders temperature and humidity fields for the
 // currently selected sensor plus the "Apply to all" action for its group.
-// Identical logic to the active-sensor panel inside SensorLimitsContent in each map page.
-// Card container + blue header mirrors the floor section style of SensorStatusPage.
-function EditPanel({ activeSensor, draft, errors, saving, onSetField, onApplyToGroup }) {
+// Discard and Save buttons are inline with the actions row at the bottom of the card.
+function EditPanel({ activeSensor, draft, errors, saving, onSetField, onApplyToGroup, hasChanges, changedCount, errorCount, onSave, onDiscard }) {
   if (!activeSensor) {
     return (
       <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, color: "var(--muted-foreground)", padding: 32 }}>
@@ -322,24 +330,67 @@ function EditPanel({ activeSensor, draft, errors, saving, onSetField, onApplyToG
             </div>
           </div>
 
-          {/* Apply to all — only shown when there are multiple sensors in the same group */}
-          {groupSensors.length > 1 && (
-            <div>
-              <Button
-                type="button"
-                size="default"
-                variant="default"
-                className="cursor-pointer"
-                disabled={saving}
-                onClick={() => onApplyToGroup(activeSensor, groupSensors)}
-              >
-                Apply to all {activeSensor.group.toLowerCase()} in {floor?.subLabel}
-              </Button>
-              <p style={{ fontSize: 11, color: "var(--muted-foreground)", marginTop: 6 }}>
-                Copies current values to all {groupSensors.length} sensors in this group
-              </p>
-            </div>
-          )}
+          {/* Actions row — Apply to all (left) + status indicators + Discard + Save (right) */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+
+            {/* Apply to all — only shown when group has multiple sensors */}
+            {groupSensors.length > 1 && (
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Button
+                  type="button"
+                  size="default"
+                  variant="default"
+                  className="cursor-pointer"
+                  disabled={saving}
+                  onClick={() => onApplyToGroup(activeSensor, groupSensors)}
+                >
+                  Apply to all {activeSensor.group.toLowerCase()} in {floor?.subLabel}
+                </Button>
+                <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>
+                  Copies current values to all {groupSensors.length} sensors in this group
+                </span>
+              </div>
+            )}
+
+            {/* Spacer — pushes Discard + Save to the right */}
+            <div style={{ flex: 1 }} />
+
+            {/* Status indicators */}
+            {errorCount > 0 && (
+              <span style={{ fontSize: 12, color: "#dc3545", fontWeight: 600 }}>
+                {errorCount} validation error{errorCount !== 1 ? "s" : ""}
+              </span>
+            )}
+            {hasChanges && !saving && (
+              <span style={{ fontSize: 12, fontWeight: 700, color: "#435ebe" }}>
+                {changedCount} unsaved change{changedCount !== 1 ? "s" : ""}
+              </span>
+            )}
+            {saving && <span className="text-sm text-muted-foreground">Saving…</span>}
+
+            {/* Discard + Save */}
+            <Button
+              type="button"
+              variant="outline"
+              size="default"
+              className="cursor-pointer"
+              disabled={saving || !hasChanges}
+              onClick={onDiscard}
+            >
+              Discard
+            </Button>
+            <Button
+              type="button"
+              variant="default"
+              size="default"
+              className="cursor-pointer"
+              disabled={saving || !hasChanges}
+              onClick={onSave}
+            >
+              {saving ? "Saving…" : `Save${hasChanges ? ` (${changedCount})` : ""}`}
+            </Button>
+
+          </div>
 
         </div>
       </div>
@@ -370,6 +421,11 @@ export default function SensorLimitsPage() {
   const [apiError, setApiError] = useState(null);
   // loading is true only on the very first fetch before any data is available
   const [loading,  setLoading]  = useState(Object.keys(limitsCache).length === 0);
+
+  // sensorStatuses: { [areaId]: 'Active' | 'Inactive' } — loaded from sharedStatusCache
+  // on mount so we can show status dots without a separate API call.
+  // Falls back to a live fetch via the status endpoint if the shared cache is empty.
+  const [sensorStatuses, setSensorStatuses] = useState({});
 
   // openFloor: which accordion item is currently expanded — p1f1 open by default.
   // type="single" on the Accordion root means opening one floor closes all others.
@@ -430,6 +486,28 @@ export default function SensorLimitsPage() {
     };
 
     fetchAll();
+  }, []);
+
+  // Fetch sensor statuses independently — same parallel pattern as SensorStatusPage.
+  // Runs once on mount; no dependency on sharedStatusCache or SensorStatusPage.
+  useEffect(() => {
+    Promise.allSettled(
+      FLOORS.map(floor =>
+        axios
+          .get(`${API_BASE}/sensors/status`, { params: { floor: floor.slug } })
+          .then(res => res.data.data)
+      )
+    ).then(results => {
+      const byAreaId = {};
+      results.forEach(r => {
+        if (r.status === "fulfilled") {
+          r.value.forEach(s => { byAreaId[s.areaId] = s.status; });
+        }
+      });
+      setSensorStatuses(byAreaId);
+    }).catch(err => {
+      console.error("SensorLimitsPage: failed to fetch statuses", err);
+    });
   }, []);
 
   // Update a single field in the draft for a given sensor.
@@ -540,7 +618,7 @@ export default function SensorLimitsPage() {
     }
   };
 
-  // Aggregate counts for the page header
+  // Aggregate counts for the page header and edit panel
   const changedCount = ALL_SENSORS.filter(s => isChanged(s.id)).length;
   const errorCount   = ALL_SENSORS.filter(s => hasRowError(s.id)).length;
   const hasChanges   = changedCount > 0;
@@ -567,54 +645,10 @@ export default function SensorLimitsPage() {
 
       {/* ── Page header ── */}
       <div style={{ marginTop: 10, padding: "14px 24px 0", flexShrink: 0 }} className="bg-background">
-        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-          <div>
-            <h1 className="text-2xl font-bold">Manage Sensor Limits</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {ALL_SENSORS.length} sensors across {FLOORS.length} floors · each sensor has its own threshold
-            </p>
-          </div>
-
-          {/* Save / Discard — top-right, always visible */}
-          <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0 }}>
-            {errorCount > 0 && (
-              <span style={{ fontSize: 12, color: "#dc3545", fontWeight: 600 }}>
-                {errorCount} validation error{errorCount !== 1 ? "s" : ""}
-              </span>
-            )}
-            {hasChanges && !saving && (
-              <span style={{ fontSize: 12, fontWeight: 700, color: "#435ebe" }}>
-                {changedCount} unsaved change{changedCount !== 1 ? "s" : ""}
-              </span>
-            )}
-            {saving && <span className="text-sm text-muted-foreground">Saving…</span>}
-            <Button
-              type="button"
-              variant="outline"
-              size="default"
-              className="cursor-pointer"
-              disabled={saving || !hasChanges}
-              onClick={() => {
-                // Reset draft back to original — discards all unsaved changes
-                setDraft(JSON.parse(JSON.stringify(original)));
-                setErrors({});
-                setApiError(null);
-              }}
-            >
-              Discard
-            </Button>
-            <Button
-              type="button"
-              variant="default"
-              size="default"
-              className="cursor-pointer"
-              disabled={saving || !hasChanges}
-              onClick={handleSave}
-            >
-              {saving ? "Saving…" : `Save${hasChanges ? ` (${changedCount})` : ""}`}
-            </Button>
-          </div>
-        </div>
+        <h1 className="text-2xl font-bold">Manage Sensor Limits</h1>
+        <p className="text-sm text-muted-foreground mt-1">
+          {ALL_SENSORS.length} Sensors across {FLOORS.length} floors · Each sensor has its own threshold
+        </p>
 
         {/* API error banner — shown when a save fails */}
         {apiError && !saving && (
@@ -623,54 +657,60 @@ export default function SensorLimitsPage() {
             {apiError}
           </div>
         )}
-
-        {/* Divider between header and body */}
-        <div style={{ height: 1, background: "var(--border)", marginTop: 14 }} />
       </div>
 
       {/* ── Body: accordion list (left) + edit panel (right) ── */}
       <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
 
-        {/* ── Left: accordion floor list ── */}
+        {/* ── Left: accordion floor list — wrapped in a card with border radius ── */}
         <div style={{
           width: 340, flexShrink: 0,
-          borderRight: "1px solid var(--border)",
           overflowY: "auto",
-          background: "var(--card)",
+          background: "var(--background)",
+          padding: "12px",
         }}>
-          <Accordion
-            type="single"
-            value={openFloor}
-            onValueChange={setOpenFloor}
-            collapsible
-            className="w-full"
-          >
-            {sensorsByFloor.map(({ floor, groups }) => (
-              <FloorAccordionItem
-                key={floor.slug}
-                floor={floor}
-                groups={groups}
-                activeId={activeId}
-                saving={saving}
-                isChanged={isChanged}
-                hasRowError={hasRowError}
-                onSelect={(id) => {
-                  setActiveId(id);
-                  // Auto-expand the floor that owns this sensor if it's currently closed
-                  const sensor = ALL_SENSORS.find(s => s.id === id);
-                  if (sensor && openFloor !== sensor.floorSlug) {
-                    setOpenFloor(sensor.floorSlug);
-                  }
-                }}
-              />
-            ))}
-          </Accordion>
+          {/* Card wrapper gives the accordion rounded corners and a contained look */}
+          <div style={{
+            border: "1px solid var(--border)",
+            borderRadius: 10,
+            overflow: "hidden",
+            background: "var(--card)",
+          }}>
+            <Accordion
+              type="single"
+              value={openFloor}
+              onValueChange={setOpenFloor}
+              collapsible
+              className="w-full"
+            >
+              {sensorsByFloor.map(({ floor, groups }) => (
+                <FloorAccordionItem
+                  key={floor.slug}
+                  floor={floor}
+                  groups={groups}
+                  activeId={activeId}
+                  saving={saving}
+                  isChanged={isChanged}
+                  hasRowError={hasRowError}
+                  sensorStatuses={sensorStatuses}
+                  onSelect={(id) => {
+                    setActiveId(id);
+                    // Auto-expand the floor that owns this sensor if it's currently closed
+                    const sensor = ALL_SENSORS.find(s => s.id === id);
+                    if (sensor && openFloor !== sensor.floorSlug) {
+                      setOpenFloor(sensor.floorSlug);
+                    }
+                  }}
+                />
+              ))}
+            </Accordion>
+          </div>
         </div>
 
         {/* ── Right: edit panel for the selected sensor ── */}
         <div style={{
           flex: 1, overflow: "hidden",
-          background: "var(--muted)",
+          background: "var(--background)",
           display: "flex", flexDirection: "column",
         }}>
           <EditPanel
@@ -680,6 +720,16 @@ export default function SensorLimitsPage() {
             saving={saving}
             onSetField={handleSetField}
             onApplyToGroup={handleApplyToGroup}
+            hasChanges={hasChanges}
+            changedCount={changedCount}
+            errorCount={errorCount}
+            onSave={handleSave}
+            onDiscard={() => {
+              // Reset draft back to original — discards all unsaved changes
+              setDraft(JSON.parse(JSON.stringify(original)));
+              setErrors({});
+              setApiError(null);
+            }}
           />
         </div>
 

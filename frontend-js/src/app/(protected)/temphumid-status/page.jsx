@@ -12,8 +12,6 @@ const API_BASE = '/api/temphumid';
 // SECTION 1: DATA LAYER
 // ─────────────────────────────────────────────────────────────────────────────
 
-// All floors in display order — slug maps to the backend ?floor= param.
-// label is shown as the section header; subLabel gives context for the floor.
 const FLOORS = [
   { slug: "p1f1",  label: "Plant 1 · Floor 1",     subLabel: "P1F1"   },
   { slug: "p1f2",  label: "Plant 1 · Floor 2",     subLabel: "P1F2"   },
@@ -23,27 +21,14 @@ const FLOORS = [
   { slug: "wh",    label: "Warehouse",              subLabel: "WH"    },
 ];
 
-// Warehouse areaIds that belong to the WH floor slug exclusively.
-// The p2f1 backend query returns all Plant 2 Floor 1 sensors (no location filter),
-// which includes WH sensors. These are excluded from the P2F1 section to avoid
-// duplication — they already appear under the Warehouse section.
 const WH_AREA_IDS = new Set([
   "P2F1-08", "P2F1-09", "P2F1-10", "P2F1-11",
   "P2F1-12", "P2F1-13", "P2F1-14", "P2F1-15",
 ]);
 
-// areaIds that belong to a different floor than what the backend query returns them under.
-// CIS lives on P2F2 physically but uses a P1F1 areaId — exclude it from the P1F1 section.
 const P1F1_EXCLUDED_AREA_IDS = new Set(["P1F1-16"]);
 
-// Module-level cache — persists across navigations so the page restores
-// instantly on revisit without a loading flash.
-// Shape: { [floorSlug]: { areaId, chipId, lineName, status }[] }
 let statusCacheByFloor = {};
-
-// Exported shared flat cache — consumed by map pages to derive activeSensorIds
-// without needing a separate fetch. Map pages import this and read on mount.
-// Shape: { [areaId]: 'Active' | 'Inactive' }
 export let sharedStatusCache = {};
 
 
@@ -53,8 +38,13 @@ export let sharedStatusCache = {};
 
 const SPINNER_STYLE = `@keyframes spinLoader { to { transform: rotate(360deg); } }`;
 
-// Full-screen loading overlay — shown only on the very first data fetch.
-// Subsequent visits restore from cache instantly.
+// NEW: chevron rotation based on Radix data-state attribute
+const CHEVRON_STYLE = `
+  .floor-chevron { transition: transform 0.2s ease; }
+  [data-state="open"] .floor-chevron { transform: rotate(180deg); }
+  [data-state="closed"] .floor-chevron { transform: rotate(0deg); }
+`;
+
 function LoadingOverlay() {
   return (
     <>
@@ -77,14 +67,6 @@ function LoadingOverlay() {
 // SECTION 3: FLOOR SECTION COMPONENT
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Renders one collapsible floor section with its sensor list and a Save button.
-// Uses AccordionItem so collapse/expand is handled by Radix — replaces the
-// manual `collapsed` useState + conditional render pattern from before.
-//
-// Change detection diffs `draft` against the `original` prop passed from the parent.
-// `original` is committed once when API data first arrives and only advances forward
-// after a successful save — this prevents the false-CHANGED bug that occurs when
-// a ref is captured before the async data has settled into state.
 function FloorSection({ floor, sensors, original, draft, saving, apiError, onToggle, onSave }) {
   const isChanged  = (areaId) => draft[areaId] !== original[areaId];
   const changedIds = sensors.filter(s => isChanged(s.areaId)).map(s => s.areaId);
@@ -94,127 +76,128 @@ function FloorSection({ floor, sensors, original, draft, saving, apiError, onTog
   const inactiveCount = sensors.filter(s => draft[s.areaId] === "Inactive").length;
 
   return (
-    <AccordionItem
-      value={floor.slug}
-      style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}
-      className="border-0"
-    >
-
-      {/* Floor header — blue trigger, click to collapse/expand */}
-      <AccordionTrigger
-        className="hover:no-underline px-0 py-0 rounded-none [&>svg]:hidden"
-        style={{ background: "none" }}
+    <>
+      {/* NEW: inject chevron style once per FloorSection render */}
+      <style>{CHEVRON_STYLE}</style>
+      <AccordionItem
+        value={floor.slug}
+        style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}
+        className="border-0"
       >
-        <div
-          style={{ width: "100%", padding: "14px 20px", background: "#435ebe", borderBottom: "1px solid #3550a8", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+        <AccordionTrigger
+          className="hover:no-underline px-0 py-0 rounded-none [&>svg]:hidden"
+          style={{ background: "none" }}
         >
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Collapse chevron — rotated by Radix data-state via CSS */}
-            <div>
-              <p style={{ fontWeight: 700, fontSize: 14, color: "#fff", margin: 0 }}>{floor.label}</p>
-              <p style={{ fontSize: 11, color: "rgba(255,255,255,.7)", margin: 0, marginTop: 2 }}>
-                {activeCount} active · {inactiveCount} inactive · {sensors.length} total
-              </p>
+          <div
+            style={{ width: "100%", padding: "14px 20px", borderBottom: "1px solid var(--border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <div>
+                <p style={{ margin: 0 }}>{floor.label}</p>
+                <p style={{ fontSize: 11, margin: 0, marginTop: 2, color: "var(--muted-foreground)" }}>
+                  {activeCount} active · {inactiveCount} inactive · {sensors.length} total
+                </p>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              {hasChanges && !saving && (
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "rgba(255,255,255,.2)", borderRadius: 5, padding: "2px 8px" }}>
+                  {changedIds.length} unsaved change{changedIds.length !== 1 ? "s" : ""}
+                </span>
+              )}
+              <span style={{ fontSize: 10, fontWeight: 700, color: "var(--muted-foreground)", letterSpacing: ".06em", textTransform: "uppercase" }}>
+                {floor.subLabel}
+              </span>
+              {/* NEW: rotating chevron — CSS flips it via [data-state] on the AccordionTrigger */}
+              <svg
+                className="floor-chevron"
+                width="14" height="14" viewBox="0 0 24 24"
+                fill="none" stroke="var(--foreground)" strokeWidth="2.5"
+                strokeLinecap="round" strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            {/* Unsaved changes badge */}
-            {hasChanges && !saving && (
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#fff", background: "rgba(255,255,255,.2)", borderRadius: 5, padding: "2px 8px" }}>
-                {changedIds.length} unsaved change{changedIds.length !== 1 ? "s" : ""}
+        </AccordionTrigger>
+
+        <AccordionContent className="pb-0">
+          <div>
+            {/* CHANGED: [...sensors].sort() to sort alphabetically by lineName without mutating props */}
+            {[...sensors].sort((a, b) => a.lineName.localeCompare(b.lineName)).map(({ areaId, lineName }) => {
+              const isActive = draft[areaId] === "Active";
+              const changed  = isChanged(areaId);
+              return (
+                <div
+                  key={areaId}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "10px 20px", borderBottom: "1px solid var(--border)",
+                    background: changed ? "rgba(67,94,190,.04)" : "transparent",
+                    transition: "background .1s",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <div style={{
+                      width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
+                      background: isActive ? "#00c9a7" : "#adb5bd",
+                    }} />
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: changed ? 600 : 400, color: "var(--foreground)" }}>{lineName}</span>
+                    </div>
+                    {changed && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#fd7e14", letterSpacing: ".04em" }}>
+                        CHANGED
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600,
+                      color: isActive ? "#00c9a7" : "#adb5bd",
+                      minWidth: 52, textAlign: "right",
+                    }}>
+                      {isActive ? "Active" : "Inactive"}
+                    </span>
+                    <Switch
+                      checked={isActive}
+                      disabled={saving}
+                      onCheckedChange={() => onToggle(floor.slug, areaId)}
+                      variant="success"
+                      size="default"
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", background: "var(--card)" }}>
+            {saving && (
+              <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>
+                Saving to database…
               </span>
             )}
-            {/* Floor slug badge */}
-            <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.55)", letterSpacing: ".06em", textTransform: "uppercase" }}>
-              {floor.subLabel}
-            </span>
-          </div>
-        </div>
-      </AccordionTrigger>
-
-      {/* Sensor list + footer — hidden when accordion is collapsed */}
-      <AccordionContent className="pb-0">
-
-        <div>
-          {sensors.map(({ areaId, lineName }) => {
-            const isActive = draft[areaId] === "Active";
-            const changed  = isChanged(areaId);
-            return (
-              <div
-                key={areaId}
-                style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "10px 20px", borderBottom: "1px solid var(--border)",
-                  background: changed ? "rgba(67,94,190,.04)" : "transparent",
-                  transition: "background .1s",
-                }}
-              >
-                {/* Left: status dot + line name + changed badge */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
-                    background: isActive ? "#00c9a7" : "#adb5bd",
-                  }} />
-                  <div>
-                    <span style={{ fontSize: 13, fontWeight: changed ? 600 : 400, color: "var(--foreground)" }}>{lineName}</span>
-                  </div>
-                  {/* Orange label — unsaved change indicator */}
-                  {changed && (
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#fd7e14", letterSpacing: ".04em" }}>
-                      CHANGED
-                    </span>
-                  )}
-                </div>
-
-                {/* Right: status label + toggle */}
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <span style={{
-                    fontSize: 11, fontWeight: 600,
-                    color: isActive ? "#00c9a7" : "#adb5bd",
-                    minWidth: 52, textAlign: "right",
-                  }}>
-                    {isActive ? "Active" : "Inactive"}
-                  </span>
-                  <Switch
-                    checked={isActive}
-                    disabled={saving}
-                    onCheckedChange={() => onToggle(floor.slug, areaId)}
-                    variant="success"
-                    size="default"
-                  />
-                </div>
+            {apiError && !saving && (
+              <div style={{ marginRight: "auto", background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "6px 12px" }}
+                className="text-sm text-destructive">
+                {apiError}
               </div>
-            );
-          })}
-        </div>
-
-        {/* Floor section footer — per-floor Save button + inline error */}
-        <div style={{ padding: "12px 20px", borderTop: "1px solid var(--border)", display: "flex", gap: 8, alignItems: "center", justifyContent: "flex-end", background: "var(--card)" }}>
-          {saving && (
-            <span className="text-sm text-muted-foreground" style={{ marginRight: "auto" }}>
-              Saving to database…
-            </span>
-          )}
-          {apiError && !saving && (
-            <div style={{ marginRight: "auto", background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 8, padding: "6px 12px" }}
-              className="text-sm text-destructive">
-              {apiError}
-            </div>
-          )}
-          <Button
-            type="button"
-            variant="default"
-            size="default"
-            className="cursor-pointer"
-            disabled={saving || !hasChanges}
-            onClick={() => onSave(floor.slug, changedIds)}
-          >
-            {saving ? "Saving…" : `Save ${floor.subLabel}`}
-          </Button>
-        </div>
-
-      </AccordionContent>
-    </AccordionItem>
+            )}
+            <Button
+              type="button"
+              variant="default"
+              size="default"
+              className="cursor-pointer"
+              disabled={saving || !hasChanges}
+              onClick={() => onSave(floor.slug, changedIds)}
+            >
+              {saving ? "Saving…" : `Save ${floor.subLabel}`}
+            </Button>
+          </div>
+        </AccordionContent>
+      </AccordionItem>
+    </>
   );
 }
 
@@ -418,10 +401,10 @@ export default function SensorStatusPage() {
       <div style={{ marginTop: 10, padding: "14px 24px", flexShrink: 0 }} className="bg-background">
         <h1 className="text-2xl font-bold">Manage Sensor Status</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          {totalCount} sensors across {FLOORS.length} floors · {totalActive} active · {totalInactive} inactive
+          {totalCount} Sensors across {FLOORS.length} floors · {totalActive} Active · {totalInactive} Inactive
           {hasAnyUnsaved && (
             <span style={{ marginLeft: 10, fontWeight: 700, color: "#435ebe" }}>
-              Unsaved changes present
+              Unsaved Changes Present
             </span>
           )}
         </p>

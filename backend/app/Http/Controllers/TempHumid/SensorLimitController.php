@@ -219,7 +219,7 @@ class SensorLimitController extends Controller
                     'Humid_Upper_Limit' => $validated['humidUL'],
                     'Humid_Lower_Limit' => $validated['humidLL'],
                     'changed_by'        => $changedBy,
-                    'changed_at'        => now(),
+                    'changed_at'        => now('Asia/Manila'),
                 ]);
 
             return response()->json([
@@ -328,7 +328,7 @@ class SensorLimitController extends Controller
                         'Humid_Upper_Limit' => $item['humidUL'],
                         'Humid_Lower_Limit' => $item['humidLL'],
                         'changed_by'        => $changedBy,
-                        'changed_at'        => now(),
+                        'changed_at'        => now('Asia/Manila'),
                     ]);
 
                 $updated[] = $item['areaId'];

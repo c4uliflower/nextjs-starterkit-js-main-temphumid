@@ -95,6 +95,105 @@ class SensorController extends Controller
     }
 
     /**
+     * GET /api/temphumid/sensors/readings/by-area/{areaId}
+     *
+     * Returns the latest reading for a single sensor by areaId.
+     * Used by: facilities page poll to check verifying alerts.
+     * Reuses the same limit resolution and breach detection as currentReadings().
+     *
+     * Query params:
+     *   ?verifiedAfter=2024-01-01T00:00:00Z   only consider readings after this timestamp
+     */
+    public function readingByAreaId(string $areaId, Request $request): JsonResponse
+    {
+        try {
+            $sensor = DB::connection('temphumid')
+                ->table('Temp_Logger_Chip_ID')
+                ->where('Area ID', $areaId)
+                ->where('Status', 'Active')
+                ->first();
+
+            if (! $sensor) {
+                return response()->json(['message' => 'Sensor not found.'], 404);
+            }
+
+            $latestLimits = $this->fetchLatestLimits([$areaId]);
+
+            $chipId = $sensor->{'Chip ID'};
+
+            $query = DB::connection('temphumid')
+                ->table('TempHumid_Calib_Log')
+                ->where('Chip ID', $chipId)
+                ->whereNotNull('Temperature')
+                ->whereNotNull('Humidity');
+
+            if ($request->has('verifiedAfter')) {
+                $query->where('Day_Time', '>', $request->query('verifiedAfter'));
+            }
+
+            $reading = $query->orderByDesc('Day_Time')->first();
+
+            if (! $reading) {
+                return response()->json([
+                    'data' => [
+                        'areaId'   => $areaId,
+                        'hasData'  => false,
+                        'status'   => 'no-data',
+                        'lastSeen' => null,
+                    ],
+                ], 200);
+            }
+
+            $limRow  = $latestLimits[$areaId] ?? null;
+            $tempUL  = $limRow ? $limRow->Temp_Upper_Limit  : $sensor->Temp_Upper_Limit;
+            $tempLL  = $limRow ? $limRow->Temp_Lower_Limit  : $sensor->Temp_Lower_Limit;
+            $humidUL = $limRow ? $limRow->Humid_Upper_Limit : $sensor->Humid_Upper_Limit;
+            $humidLL = $limRow ? $limRow->Humid_Lower_Limit : $sensor->Humid_Lower_Limit;
+
+            $temp  = (float) $reading->Temperature;
+            $humid = (float) $reading->Humidity;
+
+            $breached =
+                $temp  > (float) $tempUL ||
+                $temp  < (float) $tempLL ||
+                $humid > (float) $humidUL ||
+                $humid < (float) $humidLL;
+
+            return response()->json([
+                'data' => [
+                    'areaId'      => $areaId,
+                    'chipId'      => $chipId,
+                    'lineName'    => $sensor->{'Line Name'},
+                    'plant'       => $sensor->Plant,
+                    'floor'       => $sensor->Floor,
+                    'location'    => $sensor->Location,
+                    'hasData'     => true,
+                    'temperature' => round($temp, 2),
+                    'humidity'    => round($humid, 2),
+                    'heatIndex'   => $reading->{'Heat Index'} !== null
+                        ? round((float) $reading->{'Heat Index'}, 2)
+                        : null,
+                    'lastSeen'    => $reading->Day_Time,
+                    'status'      => $breached ? 'breach' : 'ok',
+                    'limits'      => [
+                        'tempUL'  => $tempUL,
+                        'tempLL'  => $tempLL,
+                        'humidUL' => $humidUL,
+                        'humidLL' => $humidLL,
+                    ],
+                ],
+            ], 200);
+
+        } catch (Throwable $e) {
+            Log::error('SensorController::readingByAreaId failed', [
+                'areaId' => $areaId,
+                'error'  => $e->getMessage(),
+            ]);
+            return response()->json(['message' => 'Failed to fetch reading.'], 500);
+        }
+    }
+
+    /**
      * GET /api/temphumid/dashboard/summary
      * Aggregate stats for dashboard stat cards.
      * Returns: avgTemp, avgHumid, activeSensorCount, breachCount.

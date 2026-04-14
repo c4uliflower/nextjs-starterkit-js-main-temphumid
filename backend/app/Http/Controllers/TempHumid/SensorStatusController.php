@@ -134,7 +134,7 @@ class SensorStatusController extends Controller
                         'Line Name'  => $sensor->{'Line Name'},
                         'Status'     => $item['status'],
                         'changed_by' => $changedBy,
-                        'changed_at' => now(),
+                        'changed_at' => now('Asia/Manila'),
                     ]);
 
                 $updated[] = $item['areaId'];
