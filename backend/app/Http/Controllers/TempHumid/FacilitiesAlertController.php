@@ -207,7 +207,7 @@ class FacilitiesAlertController extends Controller
 
                             $currentState = $isBreaching ? 'breach' : 'normal';
                             $prevState    = $alert->last_sensor_state ?? null;
-                            $isTransition = ($currentState === 'breach') && ($prevState !== 'breach');
+                            $isTransition = ($currentState === 'breach') && ($prevState !== 'normal');
 
                             if ($isTransition) {
                                 $alreadyRecorded = DB::connection('temphumid')
@@ -657,6 +657,7 @@ class FacilitiesAlertController extends Controller
                             'verified_by'  => null,
                             'verified_at'  => null,
                             'verify_baseline_read_at' => null,
+                            'verify_attempt_count' => DB::raw('COALESCE(verify_attempt_count, 0) + 1'),
                         ]);
 
                     DB::connection('temphumid')
@@ -680,7 +681,6 @@ class FacilitiesAlertController extends Controller
                             'notif_status' => 'resolved',
                             'resolved_by'  => 'system',
                             'resolved_at'  => now('Asia/Manila'),
-                            'verify_baseline_read_at' => null,
                         ]);
 
                     DB::connection('temphumid')
@@ -805,6 +805,7 @@ class FacilitiesAlertController extends Controller
             'verifiedAt'      => $row->verified_at,
             'resolvedBy'      => $row->resolved_by,
             'resolvedAt'      => $row->resolved_at,
+            'verifyAttemptCount' => (int) ($row->verify_attempt_count ?? 0),
         ];
     }
 }

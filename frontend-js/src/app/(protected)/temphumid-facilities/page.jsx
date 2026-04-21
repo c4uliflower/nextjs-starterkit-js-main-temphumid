@@ -803,11 +803,16 @@ function AlertCard({ alert, col, onAcknowledge, onResolve, onConflict }) {
 
             // Scheduled for maintenance state
             if (isScheduled) {
-              return (
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: 0 }}>
-                    Complete maintenance, then verify the sensor is back within limits.
-                  </p>
+                return (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    {alert.verifyAttemptCount > 0 && (
+                      <p style={{ fontSize: 11, color: "#b45309", margin: 0 }}>
+                        Previous verification failed — sensor still breaching.
+                      </p>  
+                    )}
+                    <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: 0 }}>
+                      Complete maintenance, then verify the sensor is back within limits.
+                    </p>
                   <Button
                     variant="default" size="sm" className="cursor-pointer w-full"
                     style={{ fontSize: 11, height: 30 }}
@@ -1414,7 +1419,7 @@ export default function FacilitiesDashboard() {
       <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: 0 }}>
 
         <div style={{ marginTop: 10, padding: "14px 24px", flexShrink: 0 }} className="bg-background">
-          <h1 className="text-2xl font-bold">Manage Sensor Breach</h1>
+          <h1 className="text-2xl font-bold">Manage Sensor Breach Alerts</h1>
           <p className="text-sm text-muted-foreground mt-1">
             {acknowledgedAlerts.length} Acknowledged · {openAlerts.length} Open · {resolvedAlerts.length} Resolved
             {escalatedCount > 0 && (
@@ -1439,14 +1444,14 @@ export default function FacilitiesDashboard() {
           )}
 
           <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-
+          
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-              <DashboardCard value={String(acknowledgedAlerts.length)} label="Acknowledged" icon={BellRing}       variant="destructive" />
-              <DashboardCard value={String(escalatedCount)}            label="Delayed"       icon={TriangleAlert} variant="secondary"   />
-              <DashboardCard value={String(openAlerts.length)}         label="Open"          icon={Clock}         variant="warning"     />
-              <DashboardCard value={String(resolvedAlerts.length)}     label="Resolved"      icon={CheckCheck}    variant="success"     />
+              <DashboardCard value={String(resolvedAlerts.length)}     label="Resolved"      icon={CheckCheck}    variant="success"       />
+              <DashboardCard value={String(openAlerts.length)}         label="Open"          icon={Clock}         variant="warning"       />
+              <DashboardCard value={String(escalatedCount)}            label="Delayed"       icon={TriangleAlert} variant="secondary"     /> 
+              <DashboardCard value={String(acknowledgedAlerts.length)} label="Acknowledged"  icon={BellRing}      variant="destructive"   />             
             </div>
-
+          
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
               {ACTIVE_COLUMNS.map(col => (
                 <KanbanColumn
@@ -1462,7 +1467,28 @@ export default function FacilitiesDashboard() {
 
             <div style={{ background: "var(--card)", border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
               <div style={{ padding: "14px 20px", background: "var(--card)" }}>
-                <p style={{ fontWeight: 700, fontSize: 14, color: "var(--foreground)", marginTop: 10 }}>Resolved</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      flexShrink: 0,
+                      background: "var(--success)",
+                      display: "inline-block",
+                    }}
+                  />
+                  <p
+                    style={{
+                      fontWeight: 700,
+                      fontSize: 14,
+                      color: "var(--foreground)",
+                      marginLeft: 3, 
+                    }}
+                  >
+                    Resolved
+                  </p>
+                </div>
               </div>
               <div style={{ padding: "16px 20px" }}>
                 {resolvedAlerts.length === 0 ? (
@@ -1485,7 +1511,7 @@ export default function FacilitiesDashboard() {
         onOpenChange={open => { if (!open) setSelectedResolved(null); }}
         title="Alert Details"
         description={selectedResolved ? `${selectedResolved.lineName} · ${selectedResolved.areaId}` : ""}
-        size="lg"
+        size="xl"
       >
         <ResolvedDetailContent alert={selectedResolved} />
       </CustomModal>

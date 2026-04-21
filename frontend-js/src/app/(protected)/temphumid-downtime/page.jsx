@@ -11,6 +11,8 @@ import { CustomModal } from "@/components/custom/CustomModal";
 import { Combobox } from "@/components/custom/Combobox";
 import { DataTable } from "@/components/custom/DataTable";
 import { TriangleAlert } from "lucide-react";
+import { DashboardCard } from "@/components/custom/DashboardCard";
+import { Wrench, Upload, CheckCheck, ActivitySquare } from "lucide-react";
 import axios from "@/lib/axios";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -344,7 +346,7 @@ function LoadingOverlay() {
           animation: "spinLoader 0.8s linear infinite",
         }} />
         <div style={{ textAlign: "center" }}>
-          <p style={{ fontWeight: 700, fontSize: 15, color: "var(--foreground)", margin: 0 }}>Loading maintenance data</p>
+          <p style={{ fontWeight: 700, fontSize: 15, color: "var(--foreground)", margin: 0 }}>Loading maintenance history</p>
           <p style={{ fontSize: 12, color: "var(--muted-foreground)", marginTop: 6 }}>Fetching active and history records…</p>
         </div>
       </div>
@@ -508,7 +510,7 @@ function StartDowntimeContent({ onQueued, onClose }) {
           <div style={{ display: "flex", gap: 8 }}>
             <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={() => setStep(2)} disabled={saving}>Back</Button>
             <Button type="button" size="default" variant="default" className="flex-1" style={{ cursor: "pointer" }} onClick={handleQueue} disabled={saving}>
-              {saving ? "Starting…" : "Queue for Downtime"}
+              {saving ? "Starting…" : "Queue for Maintenance"}
             </Button>
           </div>
         </>
@@ -639,7 +641,7 @@ function MarkDoneContent({ record, onDone, onClose }) {
 }
 
 
-// ── 7C: UPLOAD DOWNTIME ──────────────────────────────────────────────────────
+// ── 7C: UPLOAD ──────────────────────────────────────────────────────
 //
 // FIX #2: POST /upload sets status = 'uploaded' and uploaded_at on the DB.
 //         uploaded_by is derived server-side from the authenticated user.
@@ -698,7 +700,7 @@ function UploadDowntimeContent({ pendingDone, onUpload, onClose }) {
       <div style={{ display: "flex", gap: 8 }}>
         <Button type="button" size="default" variant="outline" className="flex-1" style={{ cursor: "pointer" }} onClick={onClose} disabled={saving}>Cancel</Button>
         <Button type="button" size="default" variant="default" className="flex-1" style={{ cursor: "pointer" }} onClick={handleUpload} disabled={pendingDone.length === 0 || saving}>
-          {saving ? "Uploading…" : "Upload Downtime"}
+          {saving ? "Uploading…" : "Upload"}
         </Button>
       </div>
     </div>
@@ -869,7 +871,7 @@ function DowntimeFormPanel({ formData, symptom }) {
       <div style={{ padding: "14px 20px" }}>
         {!hasData ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 8, padding: "28px 0", color: "var(--muted-foreground)" }}>
-            <p style={{ fontSize: 13, margin: 0, textAlign: "center" }}>Start a downtime or mark a record as done to see details here</p>
+            <p style={{ fontSize: 13, margin: 0, textAlign: "center" }}>Start a maintenance or mark a record as done to see details here</p>
           </div>
         ) : (
           <>
@@ -877,10 +879,10 @@ function DowntimeFormPanel({ formData, symptom }) {
             <PaneField label="Line Name"   value={formData.lineName}     />
             <PaneField label="Area ID"     value={formData.areaId}       />
             <PaneField label="Operator"    value={formData.technicianId} />
-            <PaneField label="Reason"      value={formData.reason}      />
-            <PaneField label="Remarks"     value={formData.remarks}     />
-            <PaneField label="Duration"    value={formData.duration}    />
-            <PaneField label="Marked Done" value={formData.markedDone}  />
+            <PaneField label="Reason"      value={formData.reason}       />
+            <PaneField label="Remarks"     value={formData.remarks}      />
+            <PaneField label="Duration"    value={formData.duration}     />
+            <PaneField label="Marked Done" value={formData.markedDone}   />
           </>
         )}
       </div>
@@ -1469,7 +1471,7 @@ export default function DowntimePage() {
         {/* ── Page header ── */}
         <div style={{ marginTop: 10, padding: "12px 24px", display: "flex", alignItems: "flex-start", justifyContent: "space-between", flexShrink: 0 }} className="bg-background">
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Manage Sensor Maintenance</h1>
+            <h1 className="text-2xl font-bold text-foreground">Manage Sensor IOT Maintenance</h1>
             <p className="text-sm text-muted-foreground mt-1">
               {stopLineList.length} Active · {pendingDone.length} Pending Upload · {maintenanceHistory.length} Uploaded
               {pendingDone.length > 0 && (
@@ -1485,8 +1487,38 @@ export default function DowntimePage() {
             disabled={pendingCount === 0}
             onClick={() => setUploadOpen(true)}
           >
-            Upload Downtime{pendingCount > 0 ? ` (${pendingCount})` : ""}
+            Upload Maintenance{pendingCount > 0 ? ` (${pendingCount})` : ""}
           </Button>
+        </div>
+
+        {/* ── Dashboard Cards ── */}
+        <div style={{ padding: "0 24px 16px", flexShrink: 0 }}>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <DashboardCard
+              value={String(maintenanceHistory.length)}
+              label="Uploaded"
+              icon={CheckCheck}
+              variant="success"
+            />
+            <DashboardCard
+              value={String(stopLineList.length)}
+              label="Active Maintenance"
+              icon={Wrench}
+              variant="warning"
+            />
+            <DashboardCard
+              value={String(maintenanceHistory.filter(r => r.symptom === "No Data").length)}
+              label="No Data"
+              icon={ActivitySquare}
+              variant="secondary" 
+            />
+            <DashboardCard
+              value={String(maintenanceHistory.filter(r => r.symptom === "Breach").length)}
+              label="Breach"
+              icon={TriangleAlert}
+              variant="destructive"
+            />
+          </div>
         </div>
 
         {/* ── Scrollable body — two-panel layout: stop line list (left) + form (right) ── */}
@@ -1594,7 +1626,7 @@ export default function DowntimePage() {
       <CustomModal
         open={uploadOpen}
         onOpenChange={open => { if (!open) setUploadOpen(false); }}
-        title="Upload Downtime"
+        title="Upload"
         description="Review records before submitting to the database."
         size="sm"
       >
