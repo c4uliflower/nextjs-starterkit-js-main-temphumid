@@ -153,10 +153,10 @@ class DowntimeController extends Controller
                 ->first(['Day_Time']);
 
             $isNoData = ! $latestReading;
-            $isStale = $latestReading
-                && now('Asia/Manila')->diffInMinutes(
-                    \Carbon\Carbon::parse($latestReading->Day_Time, 'Asia/Manila')
-                ) >= self::STALE_THRESHOLD_MINUTES;
+
+            $readingTime = \Carbon\Carbon::parse($latestReading->Day_Time, 'Asia/Manila');
+            $minutesAgo  = $readingTime->diffInMinutes(now('Asia/Manila'));
+            $isStale     = $minutesAgo >= self::STALE_THRESHOLD_MINUTES;
 
             $isNoDataPath = $isNoData || $isStale;
 

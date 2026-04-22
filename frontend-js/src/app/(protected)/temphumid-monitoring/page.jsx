@@ -804,6 +804,7 @@ export default function MonitoringPage() {
   const [floors,      setFloors]      = useState(floorsCache ?? ALL_FLOORS);
   const [activeFloor, setActiveFloor] = useState(null);
   const [loading,     setLoading]     = useState(!hasLiveData(floorsCache ?? ALL_FLOORS));
+  const [delayedCount, setDelayedCount] = useState(0); 
   const abortRef                      = useRef(null);
 
   // TODO: replace with real user from your auth context.
@@ -827,20 +828,43 @@ export default function MonitoringPage() {
     }
   };
 
+  const syncDelayedCount = async (signal) => {
+    try {
+      const res = await axios.get(`${API_BASE}/facilities/alerts`, {
+        params: { status: ['acknowledged'] },
+        paramsSerializer: (p) =>
+          p.status.map(s => `status[]=${encodeURIComponent(s)}`).join('&'),
+        signal,
+      });
+      const now = Date.now();
+      const count = res.data.data.filter(alert => {
+        const d = parseUTC(alert.acknowledgedAt);
+        if (!d) return false;
+        return Math.floor((now - d.getTime()) / 60000) >= 120;
+      }).length;
+      setDelayedCount(count);
+    } catch {
+      // non-critical
+    }
+  };
+
   useEffect(() => {
     syncForwardedAreaIds();
+    syncDelayedCount();
   }, []);
 
   useEffect(() => {
     const handleStorage = (e) => {
       if (e.key === "facilitiesAlertSent" || e.key === "facilitiesAlertResolved") {
         syncForwardedAreaIds();
+        syncDelayedCount(); 
       }
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
         syncForwardedAreaIds();
+        syncDelayedCount(); 
       }
     };
 
@@ -874,6 +898,7 @@ export default function MonitoringPage() {
         }
 
         await syncForwardedAreaIds(signal);
+        await syncDelayedCount(signal);
 
         const downtimeRes = await axios
           .get(`/api/temphumid/downtime/active`, { signal })
@@ -998,10 +1023,35 @@ export default function MonitoringPage() {
               {loading ? "Loading live data…" : `Live status across all floors · ${breachFloorCount} floor${breachFloorCount !== 1 ? "s" : ""} in breach`}
             </p>
           </div>
-          {!loading && floors.some(f => getFloorStatus(f) === "breach") && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, background: "#ffe8e8", border: "1.5px solid #dc3545", borderRadius: 5, padding: "14px 24px", animation: "borderBlink 1.4s ease-in-out infinite" }}>
-              <BreachDot />
-              <span style={{ fontSize: 13, fontWeight: 700, color: "#dc3545" }}>ALARM ACTIVE</span>
+          {!loading && (floors.some(f => getFloorStatus(f) === "breach") || delayedCount > 0) && (
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+
+              {delayedCount > 0 && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#ffe8e8", border: "1.5px solid #dc3545",
+                  borderRadius: 5, padding: "14px 24px",
+                  animation: "borderBlink 1.4s ease-in-out infinite",
+                }}>
+                  <BreachDot />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#dc3545" }}>
+                    {delayedCount} DELAYED
+                  </span>
+                </div>
+              )}
+
+              {floors.some(f => getFloorStatus(f) === "breach") && (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 8,
+                  background: "#ffe8e8", border: "1.5px solid #dc3545",
+                  borderRadius: 5, padding: "14px 24px",
+                  animation: "borderBlink 1.4s ease-in-out infinite",
+                }}>
+                  <BreachDot />
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#dc3545" }}>ALARM ACTIVE</span>
+                </div>
+              )}
+
             </div>
           )}
         </div>
