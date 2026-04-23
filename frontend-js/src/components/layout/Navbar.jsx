@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuthContext } from "@/lib/auth/AuthHook";
-import { useEscalatedFacilitiesAlerts } from "@/hooks/use-escalated-facilities-alerts";
+import { useEscalatedFacilitiesAlerts } from "@/features/temphumid/facilities-alerts/hooks/use-escalated-facilities-alerts";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,7 +105,7 @@ function FacilitiesNotificationBell() {
               escalated.map((alert) => (
                 <Link
                   key={alert.id}
-                  href="/temphumid-facilities"
+                  href="/pages/temphumid-facilities"
                   onClick={() => setOpen(false)}
                   style={{ display: "block", textDecoration: "none" }}
                 >
@@ -139,7 +139,7 @@ function FacilitiesNotificationBell() {
           {count > 0 && (
             <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)" }}>
               <Link
-                href="/temphumid-facilities"
+                href="/pages/temphumid-facilities"
                 onClick={() => setOpen(false)}
                 style={{ fontSize: 12, color: "#435ebe", textDecoration: "none", fontWeight: 600 }}
               >

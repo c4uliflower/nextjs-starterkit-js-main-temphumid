@@ -478,9 +478,6 @@ function StartDowntimeContent({ onQueued, onClose }) {
           />
           {scanError2 && <p className="text-sm text-destructive">{scanError2}</p>}
           <div style={{ display: "flex", gap: 8, flexDirection: "column" }}>
-            <Button type="button" size="sm" variant="outline" style={{ cursor: "pointer" }} onClick={() => handleTechScan("12160")}>
-              Test: Scan ID 12160
-            </Button>
           </div>
           <Button type="button" size="default" variant="outline" className="w-full" style={{ cursor: "pointer" }} onClick={() => setStep(1)}>Back</Button>
         </>
