@@ -49,7 +49,7 @@ const ACTION_LABELS = {
   others:          "Others",
 };
 
-const ESCALATION_THRESHOLD_MINS = 120;
+const ESCALATION_THRESHOLD_MINS = 30;
 const NO_READING_WARN_MINS = 45;
 
 
