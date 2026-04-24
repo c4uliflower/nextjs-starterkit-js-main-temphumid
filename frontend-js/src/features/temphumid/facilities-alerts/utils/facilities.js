@@ -15,7 +15,7 @@ export const ACTION_LABELS = {
   others: "Others",
 };
 
-export const ESCALATION_THRESHOLD_MINS = 120;
+export const ESCALATION_THRESHOLD_MINS = 30;
 export const NO_READING_WARN_MINS = 45;
 
 export const ACTIVE_COLUMNS = [
