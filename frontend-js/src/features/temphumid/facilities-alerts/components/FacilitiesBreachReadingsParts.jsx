@@ -1,6 +1,6 @@
 ﻿import { Button } from "@/components/ui/button";
 
-import { ACTION_LABELS } from "@/features/temphumid/facilities-alerts/utils/facilities";
+import { getFacilitiesActionLabel } from "@/features/temphumid/facilities-alerts/utils/facilities";
 import { formatAbsolute } from "@/utils/time";
 
 export function BreachBadge({ label }) {
@@ -314,7 +314,7 @@ export function FacilitiesResolvedDetailFields({ alert }) {
             : null
         }
       />
-      <DetailField label="Action Taken" value={ACTION_LABELS[alert.actionType] ?? alert.actionType} />
+      <DetailField label="Action Taken" value={getFacilitiesActionLabel(alert)} />
       <DetailField label="Remarks" value={alert.actionRemarks} />
       <DetailField label="Acknowledged By" value={alert.acknowledgedBy} />
       <DetailField label="Acknowledged At" value={formatAbsolute(alert.acknowledgedAt)} />
@@ -348,7 +348,7 @@ export function buildFacilitiesResolvedColumns(setSelectedResolved) {
       header: "Action taken",
       cell: ({ row }) => {
         const alert = row.original;
-        const label = ACTION_LABELS[alert.actionType] ?? alert.actionType;
+        const label = getFacilitiesActionLabel(alert);
         if (!alert.actionType) {
           return (
             <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>

@@ -189,13 +189,12 @@ function useElapsed(processedAt) {
 }
 
 function getSensorStatus(sensor) {
-  if (sensor.maintenanceOngoing) return "maintenance";
   if (!sensor.hasData) return "no_data";
   if (sensor.breach)   return "breach";
   return "active";
 }
 
-const STATUS_PRIORITY = { breach: 0, maintenance: 1, no_data: 2, active: 3 };
+const STATUS_PRIORITY = { breach: 0, no_data: 1, active: 2 };
 
 function getFloorStatus(floor) {
   let top = "active";
@@ -952,7 +951,6 @@ export default function MonitoringPage() {
                           humid: null,
                           lastSeen: null,
                           limits: null,
-                          maintenanceOngoing: !!downtime,
                           maintenanceStartedAt: downtime?.processed_at ?? null,
                           maintenanceRecordId: downtime?.id ?? null,
                         };
@@ -972,7 +970,6 @@ export default function MonitoringPage() {
                         tempLL:  live.limits?.tempLL  ?? null,
                         humidUL: live.limits?.humidUL ?? null,
                         humidLL: live.limits?.humidLL ?? null,
-                        maintenanceOngoing: !!downtime,
                         maintenanceStartedAt: downtime?.processed_at ?? null,
                         maintenanceRecordId: downtime?.id ?? null,
                       };
@@ -1086,3 +1083,6 @@ export default function MonitoringPage() {
     </>
   );
 }
+
+
+

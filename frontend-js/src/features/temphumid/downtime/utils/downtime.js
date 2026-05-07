@@ -20,11 +20,13 @@ export const REASON_SELECT_OPTIONS = [
 export const SYMPTOM_LABELS = {
   breach: "Breach",
   no_data: "No Data",
+  stable: "Stable",
 };
 
 export const SYMPTOM_DOT = {
   Breach: "#dc3545",
   "No Data": "#adb5bd",
+  Stable: "#22c55e",
 };
 
 export const DOWNTIME_GLOBAL_STYLES = `

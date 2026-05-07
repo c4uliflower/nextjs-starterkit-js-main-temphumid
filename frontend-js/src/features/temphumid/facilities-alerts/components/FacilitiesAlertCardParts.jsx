@@ -2,20 +2,18 @@
   FacilitiesBreachReadingsPanel,
 } from "@/features/temphumid/facilities-alerts/components/FacilitiesBreachReadings";
 import {
-  ACTION_LABELS,
   formatFacilitiesReadingSummary,
+  getFacilitiesActionLabel,
 } from "@/features/temphumid/facilities-alerts/utils/facilities";
 import {
   formatAbsolute,
   formatRelative,
-  formatTimer,
 } from "@/utils/time";
 
 export function FacilitiesAlertCardHeader({
   alert,
   alertState,
   col,
-  elapsed,
   onToggle,
   verifyState,
 }) {
@@ -63,53 +61,22 @@ export function FacilitiesAlertCardHeader({
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
           {(alertState.isOpen || alertState.isVerifying) && (
             <>
-              {alertState.isMaintenanceOngoing ? (
-                <>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      padding: "0px 5px",
-                      borderRadius: 5,
-                      flexShrink: 0,
-                      background: "#fef3c7",
-                      color: "#92400e",
-                      border: "1px solid #fcd34d",
-                      letterSpacing: ".04em",
-                    }}
-                  >
-                    Maintenance (ongoing)
-                  </span>
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      fontFamily: "monospace",
-                      color: "#92400e",
-                      flexShrink: 0,
-                    }}
-                  >
-                    {formatTimer(elapsed)}
-                  </span>
-                </>
-              ) : (
-                alert.actionType && (
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 800,
-                      padding: "0px 5px",
-                      borderRadius: 5,
-                      flexShrink: 0,
-                      background: "#fef3c7",
-                      color: "#92400e",
-                      border: "1px solid #fcd34d",
-                      letterSpacing: ".04em",
-                    }}
-                  >
-                    {ACTION_LABELS[alert.actionType] ?? alert.actionType}
-                  </span>
-                )
+              {alert.actionType && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 800,
+                    padding: "0px 5px",
+                    borderRadius: 5,
+                    flexShrink: 0,
+                    background: "#fef3c7",
+                    color: "#92400e",
+                    border: "1px solid #fcd34d",
+                    letterSpacing: ".04em",
+                  }}
+                >
+                  {getFacilitiesActionLabel(alert)}
+                </span>
               )}
             </>
           )}

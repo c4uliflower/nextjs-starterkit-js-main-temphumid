@@ -1,28 +1,30 @@
-﻿"use client";
+"use client";
 
 import { CustomModal } from "@/components/custom/CustomModal";
+import { LoadingOverlay } from "@/components/ui/loadingoverlay";
 import { Button } from "@/components/ui/button";
 import { TriangleAlert, Upload } from "lucide-react";
 
 import {
-  HistoryDetailContent,
-  DowntimeFormPanel,
-  MaintenanceHistoryPanel,
-  StopLineListPanel,
-} from "@/features/temphumid/downtime/components/DowntimePanels";
+  RepairFormPanel,
+  RepairHistoryDetailContent,
+  RepairHistoryPanel,
+  RepairListPanel,
+} from "@/features/temphumid/repair/components/RepairPanels";
 import {
-  MarkDoneContent,
-  StartDowntimeContent,
-  UploadDowntimeContent,
-} from "@/features/temphumid/downtime/components/DowntimeModals";
-import { useDowntimeDashboard } from "@/features/temphumid/downtime/hooks/use-downtime-dashboard";
-import { LoadingOverlay } from "@/components/ui/loadingoverlay";
-import { DOWNTIME_GLOBAL_STYLES } from "@/features/temphumid/downtime/utils/downtime";
+  MarkRepairDoneContent,
+  StartRepairContent,
+  UploadRepairContent,
+} from "@/features/temphumid/repair/components/RepairModals";
+import { useRepairDashboard } from "@/features/temphumid/repair/hooks/use-repair-dashboard";
+import { REPAIR_GLOBAL_STYLES } from "@/features/temphumid/repair/utils/repair";
 
-export default function DowntimeView() {
+export default function RepairView() {
   const {
     activeError,
     activeRecord,
+    activeRecords,
+    acuStatus,
     closeMarkDoneModal,
     closeStartModal,
     closeUploadModal,
@@ -33,7 +35,6 @@ export default function DowntimeView() {
     headerSummary,
     historyError,
     historyLoading,
-    maintenanceHistory,
     markDoneOpen,
     openMarkDone,
     openStartModal,
@@ -41,21 +42,20 @@ export default function DowntimeView() {
     pageLoading,
     pendingCount,
     pendingDone,
+    repairHistory,
     selectedHistory,
     setSelectedHistory,
     startOpen,
-    stopLineList,
-    symptom,
     uploadOpen,
-  } = useDowntimeDashboard();
+  } = useRepairDashboard();
 
   return (
     <>
-      <style>{DOWNTIME_GLOBAL_STYLES}</style>
+      <style>{REPAIR_GLOBAL_STYLES}</style>
 
       {pageLoading && (
         <LoadingOverlay
-          title="Loading maintenance history"
+          title="Loading repair history"
           subtitle="Fetching active and history records..."
         />
       )}
@@ -73,7 +73,7 @@ export default function DowntimeView() {
           className="bg-background"
         >
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Manage Sensor IoT Maintenance</h1>
+            <h1 className="text-2xl font-bold text-foreground">Manage ACU Repair</h1>
             <p className="mt-1 text-sm text-muted-foreground">{headerSummary}</p>
           </div>
           <Button
@@ -85,7 +85,7 @@ export default function DowntimeView() {
             onClick={openUploadModal}
           >
             <Upload size={16} style={{ marginRight: 6 }} />
-            Upload Maintenance Record{pendingCount > 0 ? ` (${pendingCount})` : ""}
+            Upload Repair Record{pendingCount > 0 ? ` (${pendingCount})` : ""}
           </Button>
         </div>
 
@@ -111,14 +111,14 @@ export default function DowntimeView() {
           )}
 
           <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
-            <StopLineListPanel
-              records={stopLineList}
+            <RepairListPanel
+              records={activeRecords}
               onRowClick={openMarkDone}
-              onStartDowntime={openStartModal}
+              onStartRepair={openStartModal}
             />
 
             <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
-              <DowntimeFormPanel formData={formData} symptom={symptom} />
+              <RepairFormPanel formData={formData} acuStatus={acuStatus} />
             </div>
           </div>
 
@@ -143,8 +143,8 @@ export default function DowntimeView() {
           )}
 
           <div style={{ marginTop: 20 }}>
-            <MaintenanceHistoryPanel
-              history={maintenanceHistory}
+            <RepairHistoryPanel
+              history={repairHistory}
               loading={historyLoading}
               onViewDetails={setSelectedHistory}
             />
@@ -157,11 +157,11 @@ export default function DowntimeView() {
         onOpenChange={(open) => {
           if (!open) closeStartModal();
         }}
-        title="Start Maintenance"
-        description="Scan 1: Sensor QR -> Scan 2: Operator QR -> Confirm queue entry"
+        title="Start Repair"
+        description="Scan 1: ACU QR -> Scan 2: Operator QR -> Confirm queue entry"
         size="sm"
       >
-        <StartDowntimeContent onQueued={handleQueued} onClose={closeStartModal} />
+        <StartRepairContent onQueued={handleQueued} onClose={closeStartModal} />
       </CustomModal>
 
       <CustomModal
@@ -170,11 +170,15 @@ export default function DowntimeView() {
           if (!open) closeMarkDoneModal();
         }}
         title="Mark as Done"
-        description={activeRecord ? `${activeRecord.lineName} \u00B7 ${activeRecord.areaId}` : ""}
+        description={activeRecord ? `${activeRecord.machineId} \u00B7 ${activeRecord.location}` : ""}
         size="sm"
       >
         {activeRecord && (
-          <MarkDoneContent record={activeRecord} onDone={handleDone} onClose={closeMarkDoneModal} />
+          <MarkRepairDoneContent
+            record={activeRecord}
+            onDone={handleDone}
+            onClose={closeMarkDoneModal}
+          />
         )}
       </CustomModal>
 
@@ -187,7 +191,7 @@ export default function DowntimeView() {
         description="Review records before submitting to the database."
         size="sm"
       >
-        <UploadDowntimeContent
+        <UploadRepairContent
           pendingDone={pendingDone}
           onUpload={handleUpload}
           onClose={closeUploadModal}
@@ -199,18 +203,16 @@ export default function DowntimeView() {
         onOpenChange={(open) => {
           if (!open) setSelectedHistory(null);
         }}
-        title="Maintenance Record"
+        title="Repair Record"
         description={
-          selectedHistory ? `${selectedHistory.lineName} \u00B7 ${selectedHistory.areaId}` : ""
+          selectedHistory
+            ? `${selectedHistory.machineId} \u00B7 ${selectedHistory.location}`
+            : ""
         }
         size="sm"
       >
-        <HistoryDetailContent record={selectedHistory} />
+        <RepairHistoryDetailContent record={selectedHistory} />
       </CustomModal>
     </>
   );
 }
-
-
-
-

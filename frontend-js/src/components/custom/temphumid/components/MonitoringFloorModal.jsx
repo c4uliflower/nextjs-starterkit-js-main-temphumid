@@ -19,7 +19,7 @@ import { STATUS_CONFIG, getFloorStatus, getFloorSummary } from "@/features/temph
 export function MonitoringFloorModal({
   floor,
   onClose,
-  forwardedAreaIds,
+  facilitiesAlertMap,
   onForwarded,
   currentUser,
 }) {
@@ -30,12 +30,12 @@ export function MonitoringFloorModal({
   const isAllGood = floorStatus === "active";
 
   const [notifyStates, setNotifyStates] = useState(() =>
-    buildMonitoringNotifyStateMap(floor, forwardedAreaIds)
+    buildMonitoringNotifyStateMap(floor, facilitiesAlertMap)
   );
 
   useEffect(() => {
-    setNotifyStates(buildMonitoringNotifyStateMap(floor, forwardedAreaIds));
-  }, [floor, forwardedAreaIds]);
+    setNotifyStates(buildMonitoringNotifyStateMap(floor, facilitiesAlertMap));
+  }, [facilitiesAlertMap, floor]);
 
   useEffect(() => {
     const handler = (event) => {
@@ -49,8 +49,7 @@ export function MonitoringFloorModal({
     setNotifyStates((previous) => ({ ...previous, [areaId]: state }));
   };
 
-  const { activeSensors, counts, flaggedSensors, maintenanceSensors } =
-    buildMonitoringFloorSections(floor);
+  const { activeSensors, counts, flaggedSensors } = buildMonitoringFloorSections(floor);
 
   return (
     <div
@@ -160,7 +159,6 @@ export function MonitoringFloorModal({
                   counts={counts}
                   currentUser={currentUser}
                   flaggedSensors={flaggedSensors}
-                  maintenanceSensors={maintenanceSensors}
                   notifyStates={notifyStates}
                   onForwarded={onForwarded}
                   onNotifyStateChange={handleNotifyStateChange}

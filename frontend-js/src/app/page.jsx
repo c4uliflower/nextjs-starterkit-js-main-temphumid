@@ -6,7 +6,7 @@ export default function Page() {
   const router = useRouter();
 
   useEffect(() => {
-    router.push("/pages/temphumid-dashboard");
+    router.push("/temphumid-daily");
   }, [router]);
 
   return null;

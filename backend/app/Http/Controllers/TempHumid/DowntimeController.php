@@ -21,7 +21,7 @@ class DowntimeController extends Controller
 
     private const STATUS_ONGOING  = 'ongoing';
     private const STATUS_UPLOADED = 'uploaded';
-    private const VALID_SYMPTOMS = ['Breach', 'No Data'];
+    private const VALID_SYMPTOMS = ['Breach', 'No Data', 'Stable', '-'];
 
     // Sensors update every ~30 minutes. Readings older than this are considered stale.
     private const STALE_THRESHOLD_MINUTES = 45;
@@ -62,8 +62,7 @@ class DowntimeController extends Controller
      * POST /api/temphumid/downtime/validate-sensor
      *
      * Looks up a sensor by line_name in Temp_Logger_Chip_ID, then validates
-     * against TempHumid_Facilities_Alert_Log (breach path) OR the No Data /
-     * Stale path (per-sensor threshold on TempHumid_Calib_Log).
+     * sensor activity and duplicate-ongoing protection only.
      *
      * Also rejects if the sensor already has an ongoing downtime record,
      * preventing duplicate active entries for the same Area ID.
@@ -73,8 +72,9 @@ class DowntimeController extends Controller
      *   { valid: false, message: "..." }
      *
      * Statuses:
-     *   breach  → Facilities-driven path (schedule_repair alert exists)
-     *   no_data → No Data / Stale path (no reading or reading exceeds threshold)
+     *   breach  -> latest reading exceeds configured limits
+     *   no_data -> no latest reading or reading is stale
+     *   stable  -> latest reading is available, recent, and within limits
      *
      * Body: { line_name: string }
      */
@@ -127,18 +127,14 @@ class DowntimeController extends Controller
                 ], 200);
             }
 
-            // ── Change 1: validate against Facilities alert log OR No Data / Stale path ──
-            // Path A (Facilities-driven / breach): alert exists, notif_status = 'open',
-            //   action_type = 'schedule_repair'. Kept exactly as-is from original.
-            // Path B (No Data / Stale): no reading exists in TempHumid_Calib_Log, OR
-            //   latest reading is older than STALE_THRESHOLD_MINUTES.
-            //   Uses per-sensor threshold only — does NOT compare across sensors.
-            // Allow maintenance start if EITHER path passes.
+            // Optional linkage only: if an open facilities alert exists,
+            // include its ID in the response. Validation no longer requires
+            // facilities scheduling or a breach/no-data condition.
             $facilitiesAlert = DB::connection('temphumid')
                 ->table('TempHumid_Facilities_Alert_Log')
                 ->where('Area ID', $areaId)
                 ->where('notif_status', 'open')
-                ->where('action_type', 'schedule_repair')
+                ->whereIn('action_type', ['maintenance', 'repair'])
                 ->first();
 
             // Path B: resolve latest reading for this sensor from TempHumid_Calib_Log.
@@ -150,36 +146,27 @@ class DowntimeController extends Controller
                 ->whereNotNull('Temperature')
                 ->whereNotNull('Humidity')
                 ->orderByDesc('Day_Time')
-                ->first(['Day_Time']);
+                ->first(['Day_Time', 'Temperature', 'Humidity']);
 
             $isNoData = ! $latestReading;
-
-            $readingTime = \Carbon\Carbon::parse($latestReading->Day_Time, 'Asia/Manila');
-            $minutesAgo  = $readingTime->diffInMinutes(now('Asia/Manila'));
-            $isStale     = $minutesAgo >= self::STALE_THRESHOLD_MINUTES;
+            $isStale = false;
+            if ($latestReading) {
+                $readingTime = \Carbon\Carbon::parse($latestReading->Day_Time, 'Asia/Manila');
+                $minutesAgo  = $readingTime->diffInMinutes(now('Asia/Manila'));
+                $isStale     = $minutesAgo >= self::STALE_THRESHOLD_MINUTES;
+            }
 
             $isNoDataPath = $isNoData || $isStale;
 
-            if (! $facilitiesAlert && ! $isNoDataPath) {
-                return response()->json([
-                    'valid'   => false,
-                    'message' => "{$sensor->{'Line Name'}} is not Scheduled for Maintenance in Facilities, and its latest reading is recent. Cannot start maintenance.",
-                ], 200);
-            }
-
-            // Derive symptom:
-            //   Facilities path → derive from stored alert reading vs limits (breach)
-            //   No Data path    → always 'No Data'; do NOT run breach detection here
-            if ($facilitiesAlert) {
-                // Since maintenance entry is now workflow-based, we only use the stored
-                // alert reading to label the original symptom more safely.
-                //
-                // If the stored values are outside limits → breach
-                // Otherwise default to breach as the originating Facilities alert was created
-                // from an actual notified issue, and "within limits" should NOT be relabeled
-                // as "no_data".
-                $temp  = (float) $facilitiesAlert->Temperature;
-                $humid = (float) $facilitiesAlert->Humidity;
+            // Derive symptom from sensor data only:
+            //   no_data -> no latest reading OR reading stale
+            //   breach  -> reading exists/recent but exceeds limits
+            //   stable  -> reading exists/recent and within limits
+            if ($isNoDataPath) {
+                $status = 'no_data';
+            } else {
+                $temp  = (float) $latestReading->Temperature;
+                $humid = (float) $latestReading->Humidity;
 
                 $breached =
                     $temp  > $tempUL ||
@@ -187,10 +174,7 @@ class DowntimeController extends Controller
                     $humid > $humidUL ||
                     $humid < $humidLL;
 
-                $status = 'breach';
-            } else {
-                // No Data / Stale path — symptom is always 'No Data'
-                $status = 'no_data';
+                $status = $breached ? 'breach' : 'stable';
             }
 
             // plant/floor are for frontend display only — not stored in Downtime_Log
@@ -239,7 +223,7 @@ class DowntimeController extends Controller
      *   area_id:      string   (e.g. "P1F1-05")
      *   line_name:    string   (e.g. "SMT MH")
      *   processed_by: string   (employee ID from QR scan)
-     *   symptom:      string   ("Breach" | "No Data")
+     *   symptom:      string   ("Breach" | "No Data" | "Stable")
      * }
      *
      * Returns: { data: { id, area_id, line_name, processed_by, symptom, processed_at, status } }
@@ -602,3 +586,4 @@ class DowntimeController extends Controller
         }
     }
 }
+

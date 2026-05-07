@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 import { ALL_FLOORS, FLOOR_SLUG } from "@/utils/floors";
 import {
-  fetchDowntimeActive,
   fetchFacilitiesAlerts,
   fetchSensorStatusByFloor,
+  processFacilitiesReadings,
 } from "@/features/temphumid/shared/utils/api";
 import { fetchCurrentReadingsByFloor } from "@/utils/api";
 import {
@@ -25,7 +25,7 @@ import { getFloorStatus } from "@/features/temphumid/sensor-status/utils/status"
 let floorsCache = null;
 let statusCache = {};
 let statusCacheTime = 0;
-let forwardedAreaIdsCache = new Set();
+let facilitiesAlertMapCache = new Map();
 
 export function useMonitoringData() {
   const [floors, setFloors] = useState(floorsCache ?? ALL_FLOORS);
@@ -34,37 +34,46 @@ export function useMonitoringData() {
     !hasMonitoringLiveData(floorsCache ?? ALL_FLOORS)
   );
   const [delayedCount, setDelayedCount] = useState(0);
-  const [forwardedAreaIds, setForwardedAreaIds] = useState(
-    () => new Set(forwardedAreaIdsCache)
+  const [facilitiesAlertMap, setFacilitiesAlertMap] = useState(
+    () => new Map(facilitiesAlertMapCache)
   );
   const abortRef = useRef(null);
 
-  const syncForwardedAreaIds = async (signal) => {
+  const syncFacilitiesAlerts = async (signal) => {
     try {
+      await processFacilitiesReadings();
       const alerts = await fetchFacilitiesAlerts(
         { status: ["open", "acknowledged", "verifying"] },
         { signal }
       );
-      const next = new Set(alerts.map((alert) => alert.areaId));
-      forwardedAreaIdsCache = next;
-      setForwardedAreaIds(new Set(next));
+      const next = new Map();
+      alerts.forEach((alert) => {
+        const current = next.get(alert.areaId);
+        if (!current) {
+          next.set(alert.areaId, { ...alert, duplicateCount: 1 });
+          return;
+        }
+
+        next.set(alert.areaId, {
+          ...current,
+          canNotifyAgain: current.canNotifyAgain || alert.canNotifyAgain,
+          duplicateCount: (current.duplicateCount ?? 1) + 1,
+        });
+      });
+      facilitiesAlertMapCache = next;
+      setFacilitiesAlertMap(new Map(next));
+      setDelayedCount(getFacilitiesEscalatedCount(alerts));
     } catch {
       // Non-critical; preserve current state if sync fails.
     }
   };
 
-  const syncDelayedCount = async (signal) => {
-    try {
-      const alerts = await fetchFacilitiesAlerts({ status: ["acknowledged"] }, { signal });
-      setDelayedCount(getFacilitiesEscalatedCount(alerts));
-    } catch {
-      // Non-critical.
-    }
-  };
-
   useEffect(() => {
-    syncForwardedAreaIds();
-    syncDelayedCount();
+    const timeoutId = window.setTimeout(() => {
+      void syncFacilitiesAlerts();
+    }, 0);
+
+    return () => window.clearTimeout(timeoutId);
   }, []);
 
   useEffect(() => {
@@ -73,15 +82,13 @@ export function useMonitoringData() {
         event.key === "facilitiesAlertSent" ||
         event.key === "facilitiesAlertResolved"
       ) {
-        syncForwardedAreaIds();
-        syncDelayedCount();
+        syncFacilitiesAlerts();
       }
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        syncForwardedAreaIds();
-        syncDelayedCount();
+        syncFacilitiesAlerts();
       }
     };
 
@@ -119,19 +126,7 @@ export function useMonitoringData() {
           floorsCache = null;
         }
 
-        await syncForwardedAreaIds(signal);
-        await syncDelayedCount(signal);
-
-        const downtime = await fetchDowntimeActive({ signal }).catch((error) => {
-          if (error?.name === "CanceledError") return null;
-          return [];
-        });
-        if (downtime === null) return;
-
-        const downtimeByArea = {};
-        downtime.forEach((item) => {
-          downtimeByArea[item.area_id] = item;
-        });
+        await syncFacilitiesAlerts(signal);
 
         const results = await Promise.all(
           ALL_FLOORS.map((floor) =>
@@ -160,7 +155,6 @@ export function useMonitoringData() {
             .filter((sensor) => statusCache[sensor.areaId] !== "Inactive")
             .map((sensor) => {
               const live = liveByFloor[floor.id]?.[sensor.areaId];
-              const downtimeRecord = downtimeByArea[sensor.areaId] ?? null;
               const isInactive = INACTIVE_MONITORING_AREAS.has(sensor.areaId);
 
               if (!live) {
@@ -172,14 +166,10 @@ export function useMonitoringData() {
                   humid: null,
                   lastSeen: null,
                   limits: null,
-                  maintenanceOngoing: !!downtimeRecord,
-                  maintenanceStartedAt: downtimeRecord?.processed_at ?? null,
-                  maintenanceRecordId: downtimeRecord?.id ?? null,
                 };
               }
 
-              const breach =
-                live.status === "breach" && !isInactive && !downtimeRecord;
+              const breach = live.status === "breach" && !isInactive;
 
               return {
                 ...sensor,
@@ -193,9 +183,6 @@ export function useMonitoringData() {
                 tempLL: live.limits?.tempLL ?? null,
                 humidUL: live.limits?.humidUL ?? null,
                 humidLL: live.limits?.humidLL ?? null,
-                maintenanceOngoing: !!downtimeRecord,
-                maintenanceStartedAt: downtimeRecord?.processed_at ?? null,
-                maintenanceRecordId: downtimeRecord?.id ?? null,
               };
             }),
         }));
@@ -226,16 +213,23 @@ export function useMonitoringData() {
   ).length;
 
   const markAreaForwarded = (areaId) => {
-    forwardedAreaIdsCache = new Set(forwardedAreaIdsCache).add(areaId);
-    setForwardedAreaIds(new Set(forwardedAreaIdsCache));
+    const current = facilitiesAlertMapCache.get(areaId);
+    const next = new Map(facilitiesAlertMapCache);
+    next.set(areaId, {
+      ...current,
+      areaId,
+      canNotifyAgain: false,
+    });
+    facilitiesAlertMapCache = next;
+    setFacilitiesAlertMap(new Map(next));
   };
 
   return {
     activeFloor,
     breachFloorCount,
     delayedCount,
+    facilitiesAlertMap,
     floors,
-    forwardedAreaIds,
     loading,
     markAreaForwarded,
     setActiveFloor,

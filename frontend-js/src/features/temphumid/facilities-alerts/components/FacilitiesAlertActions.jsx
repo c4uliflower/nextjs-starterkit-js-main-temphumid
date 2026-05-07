@@ -15,6 +15,7 @@ export function FacilitiesAlertActions({
   acting,
   onCloseForm,
   onConflict,
+  onOpenRepair,
   onOpenSchedule,
   onOpenVerify,
   onResolve,
@@ -25,7 +26,7 @@ export function FacilitiesAlertActions({
       return (
         <FacilitiesVerifyForm
           alertId={alert.id}
-          lockedActionType={alertState.isScheduled ? "schedule_repair" : null}
+          lockedActionType={alertState.isScheduled ? alert.actionType : null}
           initialActionType={!alertState.isScheduled ? alert.actionType ?? "" : ""}
           initialActionRemarks={alert.actionRemarks ?? ""}
           onConflict={onConflict}
@@ -42,6 +43,21 @@ export function FacilitiesAlertActions({
       return (
         <FacilitiesScheduleForm
           alertId={alert.id}
+          actionType="maintenance"
+          onSubmit={(updatedAlert) => {
+            onCloseForm();
+            onResolve(updatedAlert);
+          }}
+          onCancel={onCloseForm}
+        />
+      );
+    }
+
+    if (activeForm === "repair") {
+      return (
+        <FacilitiesScheduleForm
+          alertId={alert.id}
+          actionType="repair"
           onSubmit={(updatedAlert) => {
             onCloseForm();
             onResolve(updatedAlert);
@@ -64,8 +80,9 @@ export function FacilitiesAlertActions({
 
     return (
       <FacilitiesUnscheduledOpenActions
-        actionType={alert.actionType}
+        alert={alert}
         acting={acting}
+        onOpenRepair={onOpenRepair}
         onOpenSchedule={onOpenSchedule}
         onOpenVerify={onOpenVerify}
       />

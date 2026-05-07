@@ -1,7 +1,7 @@
 ﻿import { Button } from "@/components/ui/button";
 
 import {
-  ACTION_LABELS,
+  getFacilitiesActionLabel,
   getFacilitiesVerifyState,
 } from "@/features/temphumid/facilities-alerts/utils/facilities";
 
@@ -29,7 +29,7 @@ export function FacilitiesScheduledOpenActions({
         disabled={acting}
         onClick={onOpenVerify}
       >
-        Verify Post-Maintenance
+        {alert.actionType === "repair" ? "Verify Post-Repair" : "Verify Post-Maintenance"}
       </Button>
       <Button
         variant="outline"
@@ -44,21 +44,22 @@ export function FacilitiesScheduledOpenActions({
         disabled={acting}
         onClick={onUnschedule}
       >
-        Cancel maintenance
+        Cancel
       </Button>
     </div>
   );
 }
 
 export function FacilitiesUnscheduledOpenActions({
-  actionType,
+  alert,
   acting,
+  onOpenRepair,
   onOpenSchedule,
   onOpenVerify,
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      {actionType && (
+      {alert.actionType && (
         <>
           <span
             style={{
@@ -72,7 +73,7 @@ export function FacilitiesUnscheduledOpenActions({
               alignSelf: "flex-start",
             }}
           >
-            {ACTION_LABELS[actionType] ?? actionType}
+            {getFacilitiesActionLabel(alert)}
           </span>
           <p style={{ fontSize: 11, color: "#b45309", margin: 0 }}>
             Previous verification failed - sensor still breaching. Try again or schedule for
@@ -80,7 +81,7 @@ export function FacilitiesUnscheduledOpenActions({
           </p>
         </>
       )}
-      {!actionType && (
+      {!alert.actionType && (
         <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: 0 }}>
           No action taken yet. Verify the sensor or schedule for maintenance.
         </p>
@@ -104,6 +105,16 @@ export function FacilitiesUnscheduledOpenActions({
         onClick={onOpenSchedule}
       >
         Schedule for maintenance
+      </Button>
+      <Button
+        variant="outline"
+        size="sm"
+        className="w-full cursor-pointer"
+        style={{ fontSize: 11, height: 30 }}
+        disabled={acting}
+        onClick={onOpenRepair}
+      >
+        Queue for repair
       </Button>
     </div>
   );

@@ -146,8 +146,17 @@ export function useFacilitiesDashboard() {
   );
 
   const escalatedCount = useMemo(
-    () => getFacilitiesEscalatedCount(acknowledgedAlerts),
-    [acknowledgedAlerts]
+    () => getFacilitiesEscalatedCount(alerts.filter((alert) => alert.status !== "resolved")),
+    [alerts]
+  );
+  const escalatableAlerts = useMemo(
+    () =>
+      alerts.filter(
+        (alert) =>
+          (alert.status === "acknowledged" || alert.status === "open") &&
+          !(alert.actionType === "maintenance" || alert.actionType === "repair")
+      ),
+    [alerts]
   );
   const stats = useMemo(
     () =>
@@ -178,6 +187,12 @@ export function useFacilitiesDashboard() {
         return next;
       });
 
+      if (updatedAlert.status === "resolved") {
+        try {
+          localStorage.setItem("facilitiesAlertResolved", String(Date.now()));
+        } catch {}
+      }
+
       fetchAlerts();
     },
     [fetchAlerts]
@@ -194,7 +209,7 @@ export function useFacilitiesDashboard() {
 
   useEffect(() => {
     const checkEscalations = () => {
-      acknowledgedAlerts.forEach((alert) => {
+      escalatableAlerts.forEach((alert) => {
         const mins = minutesSince(alert.acknowledgedAt);
         const threshold = Math.floor(mins / ESCALATION_THRESHOLD_MINS);
         if (threshold >= 1) {
@@ -230,14 +245,14 @@ export function useFacilitiesDashboard() {
       clearInterval(interval);
       isMounted.current = false;
     };
-  }, [acknowledgedAlerts]);
+  }, [escalatableAlerts]);
 
   useEffect(() => {
-    const activeIds = new Set(acknowledgedAlerts.map((alert) => alert.id));
+    const activeIds = new Set(escalatableAlerts.map((alert) => alert.id));
     Object.keys(firedThresholds.current).forEach((id) => {
       if (!activeIds.has(Number(id))) delete firedThresholds.current[id];
     });
-  }, [acknowledgedAlerts]);
+  }, [escalatableAlerts]);
 
   return {
     acknowledgedAlerts,

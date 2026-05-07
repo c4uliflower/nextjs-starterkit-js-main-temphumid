@@ -11,7 +11,8 @@ export const ACTION_OPTIONS = [
 export const ACTION_LABELS = {
   adjust_temp: "Adjust temperature",
   adjust_humid: "Adjust humidity",
-  schedule_repair: "Scheduled for maintenance",
+  maintenance: "Scheduled for maintenance",
+  repair: "Queued for repair",
   others: "Others",
 };
 
@@ -33,34 +34,62 @@ export const FACILITIES_STYLES = `
 
 export function getFacilitiesEscalatedCount(alerts) {
   return alerts.filter(
-    (alert) => minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
+    (alert) =>
+      !(alert.actionType === "maintenance" || alert.actionType === "repair") &&
+      alert.status !== "resolved" &&
+      minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
   ).length;
+}
+
+export function getFacilitiesActionLabel(alert) {
+  return ACTION_LABELS[alert.actionType] ?? alert.actionType ?? null;
 }
 
 export function getFacilitiesAlertState(alert) {
   const isAcknowledged = alert.status === "acknowledged";
   const isOpen = alert.status === "open";
   const isVerifying = alert.status === "verifying";
-  const isScheduled = alert.actionType === "schedule_repair";
+  const isScheduled = alert.actionType === "maintenance" || alert.actionType === "repair";
   const isMaintenanceOngoing = !!alert.maintenanceOngoing;
+  const workTypeLabel = alert.actionType === "repair" ? "Repair" : "Maintenance";
   const minutesDelayed = minutesSince(alert.acknowledgedAt);
   const isEscalated =
-    isAcknowledged && minutesDelayed >= ESCALATION_THRESHOLD_MINS;
+    alert.status !== "resolved" && !isScheduled && minutesDelayed >= ESCALATION_THRESHOLD_MINS;
   const backendCount = Number(alert.escalationCount || 0);
   const frontendCount = Math.floor(minutesDelayed / ESCALATION_THRESHOLD_MINS);
   const escalationCount = Math.max(backendCount, frontendCount);
   const delayedHours = escalationCount * (ESCALATION_THRESHOLD_MINS / 60);
   const delayedLabel = isEscalated ? `Delayed for ${delayedHours} hours` : "";
+  const maintenanceDelayMinutes =
+    isOpen && isScheduled && !alert.verifiedAt && alert.maintenanceQueuedAt
+      ? minutesSince(alert.maintenanceQueuedAt)
+      : 0;
+  const hasWorkTimer = isOpen && isScheduled && !alert.verifiedAt && !!alert.maintenanceQueuedAt;
+  const maintenanceDelayCount = Math.floor(maintenanceDelayMinutes / ESCALATION_THRESHOLD_MINS);
+  const isMaintenanceDelayed = hasWorkTimer && maintenanceDelayCount >= 1;
+  const maintenanceDelayedHours = maintenanceDelayCount * (ESCALATION_THRESHOLD_MINS / 60);
+  const maintenanceElapsedHours =
+    Math.floor(Math.max(maintenanceDelayMinutes, 0) / ESCALATION_THRESHOLD_MINS) *
+    (ESCALATION_THRESHOLD_MINS / 60);
+  const maintenanceElapsedLabel = ` In ${workTypeLabel} for ${maintenanceElapsedHours}h`;
+  const maintenanceDelayedLabel = isMaintenanceDelayed
+    ? `${workTypeLabel} delayed for ${maintenanceDelayedHours} hours`
+    : "";
 
   return {
     delayedLabel,
     escalationCount,
+    hasWorkTimer,
     isAcknowledged,
     isEscalated,
+    isMaintenanceDelayed,
     isMaintenanceOngoing,
     isOpen,
     isScheduled,
     isVerifying,
+    maintenanceElapsedLabel,
+    maintenanceDelayedLabel,
+    maintenanceDelayMinutes,
     minutesDelayed,
   };
 }

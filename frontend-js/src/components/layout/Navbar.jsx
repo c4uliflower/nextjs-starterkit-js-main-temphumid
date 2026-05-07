@@ -105,7 +105,7 @@ function FacilitiesNotificationBell() {
               escalated.map((alert) => (
                 <Link
                   key={alert.id}
-                  href="/pages/temphumid-facilities"
+                  href="/temphumid-facilities"
                   onClick={() => setOpen(false)}
                   style={{ display: "block", textDecoration: "none" }}
                 >
@@ -139,7 +139,7 @@ function FacilitiesNotificationBell() {
           {count > 0 && (
             <div style={{ padding: "8px 14px", borderTop: "1px solid var(--border)" }}>
               <Link
-                href="/pages/temphumid-facilities"
+                href="/temphumid-facilities"
                 onClick={() => setOpen(false)}
                 style={{ fontSize: 12, color: "#435ebe", textDecoration: "none", fontWeight: 600 }}
               >

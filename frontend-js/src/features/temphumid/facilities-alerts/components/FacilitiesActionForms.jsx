@@ -10,7 +10,12 @@ import {
 
 // Copied from the current temp/humid facilities route page as an additive scaffold.
 
-export function FacilitiesScheduleForm({ alertId, onSubmit, onCancel }) {
+export function FacilitiesScheduleForm({
+  alertId,
+  actionType = "maintenance",
+  onSubmit,
+  onCancel,
+}) {
   const [remarks, setRemarks] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -20,6 +25,7 @@ export function FacilitiesScheduleForm({ alertId, onSubmit, onCancel }) {
     setError("");
     try {
       const updated = await scheduleFacilitiesAlert(alertId, {
+        actionType,
         actionRemarks: remarks.trim() || null,
       });
       onSubmit(updated);
@@ -50,10 +56,10 @@ export function FacilitiesScheduleForm({ alertId, onSubmit, onCancel }) {
           letterSpacing: ".06em",
         }}
       >
-        Schedule for maintenance
+        {actionType === "repair" ? "Queue for repair" : "Schedule for maintenance"}
       </p>
       <textarea
-        placeholder="Insert maintenance details or remarks"
+        placeholder="Add remarks"
         value={remarks}
         onChange={(event) => setRemarks(event.target.value)}
         rows={2}
@@ -173,7 +179,7 @@ export function FacilitiesVerifyForm({
           letterSpacing: ".06em",
         }}
       >
-        {lockedActionType ? "Confirm maintenance verification" : "Action taken"}
+        {lockedActionType ? "Confirm" : "Action taken"}
       </p>
 
       {!lockedActionType && (

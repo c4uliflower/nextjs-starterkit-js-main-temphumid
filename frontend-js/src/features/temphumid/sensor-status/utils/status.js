@@ -9,19 +9,12 @@ export const STATUS_STYLES = {
 
 export const STATUS_PRIORITY = {
   breach: 0,
-  maintenance: 1,
-  no_data: 2,
-  active: 3,
+  no_data: 1,
+  active: 2,
 };
 
 export const STATUS_CONFIG = {
   breach: { color: "#dc3545", bg: "#ffe8e8", label: "Breach", dot: "#dc3545" },
-  maintenance: {
-    color: "var(--warning)",
-    bg: "color-mix(in srgb, var(--warning) 12%, white)",
-    label: "Maintenance",
-    dot: "var(--warning)",
-  },
   no_data: { color: "#6c757d", bg: "#f1f3f5", label: "No Data", dot: "#adb5bd" },
   active: { color: "#198754", bg: "#e8fff8", label: "Active", dot: "#00c9a7" },
 };
@@ -31,7 +24,6 @@ export function getPaneStatus(sensor) {
 }
 
 export function getSensorStatus(sensor) {
-  if (sensor.maintenanceOngoing) return "maintenance";
   if (!sensor.hasData) return "no_data";
   if (sensor.breach) return "breach";
   return "active";
@@ -50,12 +42,10 @@ export function getFloorStatus(floor) {
 
 export function getFloorSummary(floor) {
   const breached = floor.sensors.filter((sensor) => getSensorStatus(sensor) === "breach").length;
-  const maintenance = floor.sensors.filter((sensor) => getSensorStatus(sensor) === "maintenance").length;
   const noData = floor.sensors.filter((sensor) => getSensorStatus(sensor) === "no_data").length;
   const parts = [];
 
   if (breached > 0) parts.push(`${breached} in breach`);
-  if (maintenance > 0) parts.push(`${maintenance} in maintenance`);
   if (noData > 0) parts.push(`${noData} no data`);
 
   return parts.length ? parts.join(" · ") : "All stable";

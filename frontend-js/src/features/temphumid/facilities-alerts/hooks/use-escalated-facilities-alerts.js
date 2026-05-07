@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback } from "react";
 import axios from "@/lib/axios";
+import { ESCALATION_THRESHOLD_MINS } from "@/features/temphumid/facilities-alerts/utils/facilities";
 
 // Copied from src/hooks/use-escalated-facilities-alerts.js as an additive scaffold.
 
 const API_BASE = "/api/temphumid";
-const ESCALATION_THRESHOLD_MINS = 120;
 const POLL_INTERVAL_MS = 60_000;
 
 function minutesSince(isoString) {
@@ -25,12 +25,14 @@ export function useEscalatedFacilitiesAlerts() {
   const fetchAndFilter = useCallback(async () => {
     try {
       const response = await axios.get(`${API_BASE}/facilities/alerts`, {
-        params: { status: "acknowledged" },
+        params: { status: ["acknowledged", "open"] },
       });
 
       const alerts = response.data?.data ?? [];
       const filtered = alerts.filter(
-        (alert) => minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
+        (alert) =>
+          !(alert.actionType === "maintenance" || alert.actionType === "repair") &&
+          minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
       );
 
       const enriched = filtered.map((alert) => {

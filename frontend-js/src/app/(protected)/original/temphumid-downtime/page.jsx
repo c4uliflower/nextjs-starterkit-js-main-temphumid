@@ -1488,36 +1488,6 @@ export default function DowntimePage() {
           </Button>
         </div>
 
-        {/* ── Dashboard Cards ── */}
-        <div style={{ padding: "0 24px 16px", flexShrink: 0 }}>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <DashboardCard
-              value={String(maintenanceHistory.length)}
-              label="Uploaded"
-              icon={CheckCheck}
-              variant="success"
-            />
-            <DashboardCard
-              value={String(stopLineList.length)}
-              label="Active Maintenance"
-              icon={Wrench}
-              variant="warning"
-            />
-            <DashboardCard
-              value={String(maintenanceHistory.filter(r => r.symptom === "No Data").length)}
-              label="No Data"
-              icon={ActivitySquare}
-              variant="secondary" 
-            />
-            <DashboardCard
-              value={String(maintenanceHistory.filter(r => r.symptom === "Breach").length)}
-              label="Breach"
-              icon={TriangleAlert}
-              variant="destructive"
-            />
-          </div>
-        </div>
-
         {/* ── Scrollable body — two-panel layout: stop line list (left) + form (right) ── */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 24px 24px" }}>
 
@@ -1647,3 +1617,6 @@ export default function DowntimePage() {
     </>
   );
 }
+
+
+

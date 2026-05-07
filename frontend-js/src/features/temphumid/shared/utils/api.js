@@ -131,3 +131,39 @@ export async function uploadDowntimeRecords(ids) {
   const response = await axios.post(`${API_BASE}/downtime/upload`, { ids });
   return response.data?.data ?? null;
 }
+
+export async function fetchRepairActive(options = {}) {
+  const response = await axios.get(`${API_BASE}/repair/active`, {
+    signal: options.signal,
+  });
+  return response.data?.data ?? [];
+}
+
+export async function fetchRepairHistory(options = {}) {
+  const response = await axios.get(`${API_BASE}/repair/history`, {
+    signal: options.signal,
+  });
+  return response.data?.data ?? [];
+}
+
+export async function validateRepairAcuQr(machineQr) {
+  const response = await axios.post(`${API_BASE}/repair/validate-acu`, {
+    machine_qr: machineQr,
+  });
+  return response.data ?? {};
+}
+
+export async function startRepair(payload) {
+  const response = await axios.post(`${API_BASE}/repair/start`, payload);
+  return response.data?.data ?? null;
+}
+
+export async function markRepairDone(id, payload) {
+  const response = await axios.post(`${API_BASE}/repair/mark-done/${id}`, payload);
+  return response.data?.data ?? null;
+}
+
+export async function uploadRepairRecords(ids) {
+  const response = await axios.post(`${API_BASE}/repair/upload`, { ids });
+  return response.data?.data ?? null;
+}

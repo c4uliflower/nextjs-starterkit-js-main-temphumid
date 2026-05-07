@@ -190,7 +190,7 @@ function ScheduleForm({ alertId, onSubmit, onCancel }) {
         Schedule for maintenance
       </p>
       <textarea
-        placeholder="Insert maintenance details or remarks"
+        placeholder="Add remarks"
         value={remarks}
         onChange={e => setRemarks(e.target.value)}
         rows={2}

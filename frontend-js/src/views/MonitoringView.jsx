@@ -21,8 +21,8 @@ export default function MonitoringView({ currentUser = null }) {
     activeFloor,
     breachFloorCount,
     delayedCount,
+    facilitiesAlertMap,
     floors,
-    forwardedAreaIds,
     loading,
     markAreaForwarded,
     setActiveFloor,
@@ -112,7 +112,7 @@ export default function MonitoringView({ currentUser = null }) {
         <MonitoringFloorModal
           floor={activeFloor}
           onClose={() => setActiveFloor(null)}
-          forwardedAreaIds={forwardedAreaIds}
+          facilitiesAlertMap={facilitiesAlertMap}
           onForwarded={markAreaForwarded}
           currentUser={currentUser}
         />

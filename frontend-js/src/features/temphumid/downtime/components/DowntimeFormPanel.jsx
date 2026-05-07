@@ -17,7 +17,7 @@ export function DowntimeFormPanel({ formData, symptom }) {
       <div
         style={{
           padding: "14px 20px",
-          background: "#435ebe",
+          background: "var(--primary)",
           borderBottom: "1px solid #3550a8",
         }}
       >
@@ -48,7 +48,7 @@ export function DowntimeFormPanel({ formData, symptom }) {
             <PaneField
               label="Symptom"
               value={symptom}
-              valueStyle={symptom ? { color: "#dc3545", fontWeight: 700 } : {}}
+              valueStyle={symptom && symptom !== "-" ? { color: "#dc3545", fontWeight: 700 } : {}}
             />
             <PaneField label="Line Name" value={formData.lineName} />
             <PaneField label="Area ID" value={formData.areaId} />

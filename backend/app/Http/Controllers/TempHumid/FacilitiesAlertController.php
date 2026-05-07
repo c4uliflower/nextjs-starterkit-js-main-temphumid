@@ -33,13 +33,79 @@ class FacilitiesAlertController extends Controller
             'humidLL'     => ['required', 'numeric'],
         ]);
 
-        $existing = DB::connection('temphumid')
+        $existingAlerts = DB::connection('temphumid')
             ->table('TempHumid_Facilities_Alert_Log')
             ->where('Area ID', $validated['areaId'])
             ->whereIn('notif_status', ['acknowledged', 'open', 'verifying'])
-            ->first();
+            ->orderByDesc('acknowledged_at')
+            ->orderByDesc('ID')
+            ->get();
 
-        if ($existing) {
+        if ($existingAlerts->isNotEmpty()) {
+            $renotifyEligible = $existingAlerts->first(
+                static fn (object $alert): bool => (bool) ($alert->can_notify_again ?? false)
+            );
+
+            if ($renotifyEligible) {
+                try {
+                    $user = $request->user();
+                    $acknowledgedBy = $user
+                        ? trim($user->first_name . ' ' . $user->last_name) . ' (' . $user->employee_no . ')'
+                        : 'unknown';
+
+                    $id = DB::connection('temphumid')
+                        ->table('TempHumid_Facilities_Alert_Log')
+                        ->insertGetId([
+                            'Area ID' => $validated['areaId'],
+                            'Line Name' => $validated['lineName'],
+                            'Temperature' => $validated['temperature'],
+                            'Humidity' => $validated['humidity'],
+                            'Temp_Upper_Limit' => $validated['tempUL'],
+                            'Temp_Lower_Limit' => $validated['tempLL'],
+                            'Humid_Upper_Limit' => $validated['humidUL'],
+                            'Humid_Lower_Limit' => $validated['humidLL'],
+                            'acknowledged_by' => $acknowledgedBy,
+                            'acknowledged_at' => now('Asia/Manila'),
+                            'notif_status' => 'acknowledged',
+                            'opened_by' => null,
+                            'opened_at' => null,
+                            'action_type' => null,
+                            'maintenance_queued_at' => null,
+                            'action_remarks' => null,
+                            'verified_by' => null,
+                            'verified_at' => null,
+                            'resolved_by' => null,
+                            'resolved_at' => null,
+                            'can_notify_again' => 0,
+                        ]);
+
+                    DB::connection('temphumid')
+                        ->table('TempHumid_Facilities_Alert_Log')
+                        ->where('ID', $renotifyEligible->ID)
+                        ->update([
+                            'can_notify_again' => 0,
+                        ]);
+
+                    $created = DB::connection('temphumid')
+                        ->table('TempHumid_Facilities_Alert_Log')
+                        ->where('ID', $id)
+                        ->first();
+
+                    return response()->json([
+                        'message' => 'Alert created.',
+                        'data' => $this->formatAlert($created),
+                    ], 201);
+                } catch (Throwable $exception) {
+                    Log::error('FacilitiesAlertController::store renotify failed', [
+                        'areaId' => $validated['areaId'],
+                        'error' => $exception->getMessage(),
+                    ]);
+                    return response()->json(['message' => 'Failed to create alert.'], 500);
+                }
+            }
+
+            $existing = $existingAlerts->first();
+
             return response()->json([
                 'message' => 'Alert already exists.',
                 'data'    => $this->formatAlert($existing),
@@ -69,11 +135,13 @@ class FacilitiesAlertController extends Controller
                     'opened_by'          => null,
                     'opened_at'          => null,
                     'action_type'        => null,
+                    'maintenance_queued_at' => null,
                     'action_remarks'     => null,
                     'verified_by'        => null,
                     'verified_at'        => null,
                     'resolved_by'        => null,
                     'resolved_at'        => null,
+                    'can_notify_again'   => 0,
                 ]);
 
             return response()->json([
@@ -156,6 +224,7 @@ class FacilitiesAlertController extends Controller
                 foreach ($alerts as $alert) {
                     try {
                         DB::connection('temphumid')->transaction(function () use ($alert, &$transitions) {
+                            $alertId = (int) $alert->ID;
                             $areaId = $alert->{'Area ID'};
 
                             $sensor = DB::connection('temphumid')
@@ -207,44 +276,35 @@ class FacilitiesAlertController extends Controller
 
                             $currentState = $isBreaching ? 'breach' : 'normal';
                             $prevState    = $alert->last_sensor_state ?? null;
-                            $isTransition = ($currentState === 'breach') && ($prevState !== 'normal');
+                            $isTransition = ($currentState === 'breach') && ($prevState !== 'breach');
+                            $canRenotify = ($currentState === 'breach') && ($prevState === 'normal');
 
                             if ($isTransition) {
-                                $alreadyRecorded = DB::connection('temphumid')
-                                    ->table('TempHumid_Breach_Events')
-                                    ->where('alert_id', $alert->ID)
-                                    ->where('reading_at', $readingAtSql)
-                                    ->exists();
+                                $this->appendBreachEvent(
+                                    $alertId,
+                                    $areaId,
+                                    $sensor->{'Line Name'},
+                                    $readingAtSql,
+                                    $temp,
+                                    $humid,
+                                    $tempUL,
+                                    $tempLL,
+                                    $humidUL,
+                                    $humidLL,
+                                    $breachedTemp,
+                                    $breachedHumid
+                                );
 
-                                if (! $alreadyRecorded) {
-                                    DB::connection('temphumid')
-                                        ->table('TempHumid_Breach_Events')
-                                        ->insert([
-                                            'alert_id'          => $alert->ID,
-                                            'Area ID'           => $areaId,
-                                            'Line Name'         => $sensor->{'Line Name'},
-                                            'reading_at'        => $readingAtSql,
-                                            'temperature'       => round($temp,  2),
-                                            'humidity'          => round($humid, 2),
-                                            'Temp_Upper_Limit'  => $tempUL,
-                                            'Temp_Lower_Limit'  => $tempLL,
-                                            'Humid_Upper_Limit' => $humidUL,
-                                            'Humid_Lower_Limit' => $humidLL,
-                                            'breached_temp'     => $breachedTemp  ? 1 : 0,
-                                            'breached_humid'    => $breachedHumid ? 1 : 0,
-                                            'created_at'        => now('Asia/Manila'),
-                                        ]);
-
-                                    $transitions++;
-                                }
+                                $transitions++;
                             }
 
                             DB::connection('temphumid')->update(
                                 "UPDATE [TempHumid_Facilities_Alert_Log]
                                 SET [last_sensor_state] = ?,
-                                    [last_sensor_read_at] = CAST(? AS datetime2(7))
+                                    [last_sensor_read_at] = CAST(? AS datetime2(7)),
+                                    [can_notify_again] = ?
                                 WHERE [ID] = ?",
-                                [$currentState, $readingAtSql, $alert->ID]
+                                [$currentState, $readingAtSql, $canRenotify ? 1 : 0, $alertId]
                             );
                         });
                     } catch (Throwable $e) {
@@ -327,8 +387,8 @@ class FacilitiesAlertController extends Controller
         // =========================================================================
         // PATCH /api/temphumid/facilities/alerts/{id}/schedule
         //
-        // Tags alert as scheduled for maintenance.
-        // Sets action_type = schedule_repair, clears verified_by/at.
+        // Tags alert as scheduled for maintenance or repair.
+        // Sets action_type to 'maintenance' or 'repair', clears verified_by/at.
         // Does NOT insert an action log row — no verification attempt yet.
         // Only allowed when notif_status is 'open'.
         //
@@ -337,6 +397,7 @@ class FacilitiesAlertController extends Controller
         public function schedule(Request $request, int $id): JsonResponse
         {
             $validated = $request->validate([
+                'actionType'    => ['required', 'string', 'in:maintenance,repair'],
                 'actionRemarks' => ['nullable', 'string', 'max:1000'],
             ]);
 
@@ -354,7 +415,7 @@ class FacilitiesAlertController extends Controller
                     return response()->json(['message' => 'Alert must be open to schedule maintenance.'], 422);
                 }
 
-                if ($alert->action_type === 'schedule_repair') {
+                if (in_array($alert->action_type, ['maintenance', 'repair'])) {
                     return response()->json(['message' => 'Alert is already scheduled for maintenance.'], 422);
                 }
 
@@ -362,10 +423,11 @@ class FacilitiesAlertController extends Controller
                     ->table('TempHumid_Facilities_Alert_Log')
                     ->where('ID', $id)
                     ->update([
-                        'action_type'    => 'schedule_repair',
-                        'action_remarks' => $validated['actionRemarks'] ?? null,
-                        'verified_by'    => null,
-                        'verified_at'    => null,
+                        'action_type'           => $validated['actionType'],
+                        'maintenance_queued_at' => now('Asia/Manila'),
+                        'action_remarks'        => $validated['actionRemarks'] ?? null,
+                        'verified_by'           => null,
+                        'verified_at'           => null,
                     ]);
 
                 $updated = DB::connection('temphumid')
@@ -389,9 +451,9 @@ class FacilitiesAlertController extends Controller
         // =========================================================================
         // PATCH /api/temphumid/facilities/alerts/{id}/unschedule
         //
-        // Cancels a scheduled maintenance — clears action_type back to null.
+        // Cancels a scheduled maintenance or repair — clears action_type back to null.
         // No action log row inserted — nothing was verified.
-        // Only allowed when notif_status is 'open' and action_type is 'schedule_repair'.
+        // Only allowed when notif_status is 'open' and action_type is 'maintenance' or 'repair'.
         // =========================================================================
         public function unschedule(Request $request, int $id): JsonResponse
         {
@@ -405,7 +467,7 @@ class FacilitiesAlertController extends Controller
                     return response()->json(['message' => 'Alert not found.'], 404);
                 }
 
-                if ($alert->notif_status !== 'open' || $alert->action_type !== 'schedule_repair') {
+                if ($alert->notif_status !== 'open' || ! in_array($alert->action_type, ['maintenance', 'repair'])) {
                     return response()->json(['message' => 'Alert is not in scheduled state.'], 422);
                 }
 
@@ -414,6 +476,7 @@ class FacilitiesAlertController extends Controller
                     ->where('ID', $id)
                     ->update([
                         'action_type'    => null,
+                        'maintenance_queued_at' => null,
                         'action_remarks' => null,
                     ]);
 
@@ -431,7 +494,7 @@ class FacilitiesAlertController extends Controller
                 Log::error('FacilitiesAlertController::unschedule failed', [
                     'id' => $id, 'error' => $e->getMessage(),
                 ]);
-                return response()->json(['message' => 'Failed to cancel maintenance.'], 500);
+                return response()->json(['message' => 'Failed to cancel.'], 500);
             }
         }
 
@@ -443,14 +506,14 @@ class FacilitiesAlertController extends Controller
     //
     // Both paths use this endpoint:
     //   - adjust_temp / adjust_humid / others  → normal verify
-    //   - schedule_repair                       → verify after maintenance
+    //   - maintenance / repair                 → verify after maintenance/repair
     //
     // Body: { actionType, actionRemarks? }
     // =========================================================================
     public function verify(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'actionType'    => ['required', 'string', 'in:adjust_temp,adjust_humid,schedule_repair,others'],
+            'actionType' => ['required', 'string', 'in:adjust_temp,adjust_humid,maintenance,repair,others'],
             'actionRemarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -475,8 +538,8 @@ class FacilitiesAlertController extends Controller
                 return response()->json(['message' => 'Alert must be open before it can be verified.'], 422);
             }
 
-            // schedule_repair verify path: alert must already be tagged as scheduled
-            if ($validated['actionType'] === 'schedule_repair' && $alert->action_type !== 'schedule_repair') {
+            // maintenance/repair verify path: alert must already be tagged
+            if (in_array($validated['actionType'], ['maintenance', 'repair']) && ! in_array($alert->action_type, ['maintenance', 'repair'])) {
                 return response()->json(['message' => 'Alert is not scheduled for maintenance.'], 422);
             }
 
@@ -515,6 +578,7 @@ class FacilitiesAlertController extends Controller
                         'action_remarks'          => $validated['actionRemarks'] ?? null,
                         'verified_by'             => $verifiedBy,
                         'verified_at'             => $verifiedAt,
+                        'maintenance_queued_at'   => $alert->maintenance_queued_at,
                         'verify_baseline_read_at' => $latestReadingAt
                             ? Carbon::parse($latestReadingAt)->format('Y-m-d H:i:s.u')
                             : null,
@@ -656,6 +720,9 @@ class FacilitiesAlertController extends Controller
                             'notif_status' => 'open',
                             'verified_by'  => null,
                             'verified_at'  => null,
+                            'maintenance_queued_at' => in_array($alert->action_type, ['maintenance', 'repair'])
+                                ? now('Asia/Manila')
+                                : $alert->maintenance_queued_at,
                             'verify_baseline_read_at' => null,
                             'verify_attempt_count' => DB::raw('COALESCE(verify_attempt_count, 0) + 1'),
                         ]);
@@ -720,7 +787,7 @@ class FacilitiesAlertController extends Controller
     // =========================================================================
     // PATCH /api/temphumid/facilities/alerts/{id}/escalate
     //
-    // Records escalation when an acknowledged alert crosses a 2h threshold.
+    // Records escalation when an acknowledged/open alert crosses a delay threshold.
     // Body: { escalationCount }
     // =========================================================================
     public function escalate(Request $request, int $id): JsonResponse
@@ -739,8 +806,8 @@ class FacilitiesAlertController extends Controller
                 return response()->json(['message' => 'Alert not found.'], 404);
             }
 
-            if ($alert->notif_status !== 'acknowledged') {
-                return response()->json(['message' => 'Alert is not in acknowledged state.'], 422);
+            if (! in_array($alert->notif_status, ['acknowledged', 'open'])) {
+                return response()->json(['message' => 'Alert is not in acknowledged/open state.'], 422);
             }
 
             if ((int) $alert->escalation_count >= $validated['escalationCount']) {
@@ -800,12 +867,46 @@ class FacilitiesAlertController extends Controller
             'openedBy'        => $row->opened_by,
             'openedAt'        => $row->opened_at,
             'actionType'      => $row->action_type,
+            'maintenanceQueuedAt' => $row->maintenance_queued_at ?? null,
             'actionRemarks'   => $row->action_remarks,
             'verifiedBy'      => $row->verified_by,
             'verifiedAt'      => $row->verified_at,
             'resolvedBy'      => $row->resolved_by,
             'resolvedAt'      => $row->resolved_at,
             'verifyAttemptCount' => (int) ($row->verify_attempt_count ?? 0),
+            'canNotifyAgain'  => (bool) ($row->can_notify_again ?? false),
         ];
+    }
+    private function appendBreachEvent(
+        int $alertId,
+        string $areaId,
+        string $lineName,
+        string $readingAt,
+        float $temperature,
+        float $humidity,
+        float $tempUL,
+        float $tempLL,
+        float $humidUL,
+        float $humidLL,
+        bool $breachedTemp,
+        bool $breachedHumid
+    ): void {
+        DB::connection('temphumid')
+            ->table('TempHumid_Breach_Events')
+            ->insert([
+                'alert_id' => $alertId,
+                'Area ID' => $areaId,
+                'Line Name' => $lineName,
+                'reading_at' => $readingAt,
+                'temperature' => round($temperature, 2),
+                'humidity' => round($humidity, 2),
+                'Temp_Upper_Limit' => $tempUL,
+                'Temp_Lower_Limit' => $tempLL,
+                'Humid_Upper_Limit' => $humidUL,
+                'Humid_Lower_Limit' => $humidLL,
+                'breached_temp' => $breachedTemp ? 1 : 0,
+                'breached_humid' => $breachedHumid ? 1 : 0,
+                'created_at' => now('Asia/Manila'),
+            ]);
     }
 }

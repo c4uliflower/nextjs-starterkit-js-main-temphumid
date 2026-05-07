@@ -1,5 +1,4 @@
 ﻿import {
-  MonitoringMaintenanceStatusRow,
   MonitoringSensorStatusRow,
 } from "@/features/temphumid/sensor-status/components/MonitoringStatusBits";
 import { StatusDot } from "@/features/temphumid/sensor-status/components/MonitoringStatusDots";
@@ -99,7 +98,6 @@ export function MonitoringIssueState({
   counts,
   currentUser,
   flaggedSensors,
-  maintenanceSensors,
   notifyStates,
   onForwarded,
   onNotifyStateChange,
@@ -132,28 +130,6 @@ export function MonitoringIssueState({
           onForwarded={onForwarded}
         />
       ))}
-
-      {maintenanceSensors.length > 0 && (
-        <>
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 700,
-              color: "var(--muted-foreground)",
-              textTransform: "uppercase",
-              letterSpacing: ".08em",
-              marginTop: 12,
-              marginBottom: 8,
-            }}
-          >
-            Ongoing ({maintenanceSensors.length})
-          </div>
-
-          {maintenanceSensors.map((sensor, index) => (
-            <MonitoringMaintenanceStatusRow key={sensor.id} sensor={sensor} index={index} />
-          ))}
-        </>
-      )}
 
       <MonitoringActiveSensorChips sensors={activeSensors} />
     </>

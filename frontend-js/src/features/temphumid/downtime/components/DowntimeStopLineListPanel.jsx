@@ -32,7 +32,7 @@ export function StopLineListPanel({ records, onRowClick, onStartDowntime }) {
           Active Maintenance
         </p>
         <p style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", margin: "2px 0 0" }}>
-          Stop Line List
+          IoT Sensor Maintenance List
         </p>
       </div>
 
@@ -75,7 +75,7 @@ export function StopLineListPanel({ records, onRowClick, onStartDowntime }) {
               padding: "28px 0",
             }}
           >
-            <p className="text-center text-sm text-muted-foreground">No active records</p>
+            <p className="text-center text-sm text-muted-foreground">No active maintenance</p>
           </div>
         ) : (
           records.map((record) => (

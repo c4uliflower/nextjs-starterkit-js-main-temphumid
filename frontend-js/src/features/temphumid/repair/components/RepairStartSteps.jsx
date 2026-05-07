@@ -1,18 +1,20 @@
-﻿import { Button } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 
-import { ConfirmedChip } from "@/features/temphumid/downtime/components/DowntimeAtoms";
+import {
+  RepairConfirmedChip,
+} from "@/features/temphumid/repair/components/RepairAtoms";
 import { DowntimeQrScanner } from "@/features/temphumid/downtime/components/DowntimeQrScanner";
-import { getDowntimeSymptomColor } from "@/features/temphumid/downtime/utils/downtime";
+import { getRepairStatusColor } from "@/features/temphumid/repair/utils/repair";
 
-export function DowntimeSensorScanStep({ onError, onScan, saving, scanError }) {
+export function RepairAcuScanStep({ onError, onScan, saving, scanError }) {
   return (
     <>
       <DowntimeQrScanner
-        label="Point camera at the QR code on the sensor or its location label."
+        label="Point camera at the QR code on the ACU or machine label."
         onScan={onScan}
         onError={onError}
       />
-      {saving && <p className="text-center text-sm text-muted-foreground">Validating sensor...</p>}
+      {saving && <p className="text-center text-sm text-muted-foreground">Validating ACU...</p>}
       {scanError && (
         <p className="text-sm text-destructive" style={{ marginTop: 4 }}>
           {scanError}
@@ -22,22 +24,22 @@ export function DowntimeSensorScanStep({ onError, onScan, saving, scanError }) {
   );
 }
 
-export function DowntimeTechnicianScanStep({
+export function RepairTechnicianScanStep({
+  acuInfo,
   onBack,
-  onClearSensor,
+  onClearAcu,
   onError,
   onScan,
   scanError,
-  sensorInfo,
 }) {
   return (
     <>
-      <ConfirmedChip
-        label={sensorInfo.lineName}
-        sub={`${sensorInfo.areaId} \u00B7 ${sensorInfo.plant}${sensorInfo.floor}`}
+      <RepairConfirmedChip
+        label={acuInfo.machineId}
+        sub={`${acuInfo.location || "No location"} \u00B7 ${acuInfo.machineQr}`}
         color="#fff"
-        bg="#435ebe"
-        onClear={onClearSensor}
+        bg="#0f766e"
+        onClear={onClearAcu}
       />
       <DowntimeQrScanner
         label="Scan the QR on your employee ID."
@@ -59,37 +61,36 @@ export function DowntimeTechnicianScanStep({
   );
 }
 
-export function DowntimeConfirmStartStep({
+export function RepairConfirmStartStep({
+  acuInfo,
   apiError,
   onBack,
-  onClearSensor,
+  onClearAcu,
   onClearTech,
   onConfirm,
   saving,
-  sensorInfo,
-  symptomLabel,
   techInfo,
 }) {
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <ConfirmedChip
-          label={sensorInfo.lineName}
-          sub={`${sensorInfo.areaId} \u00B7 ${sensorInfo.plant}${sensorInfo.floor}`}
+        <RepairConfirmedChip
+          label={acuInfo.machineId}
+          sub={`${acuInfo.location || "No location"} \u00B7 ${acuInfo.description || "-"}`}
           color="#fff"
-          bg="#435ebe"
-          onClear={onClearSensor}
+          bg="#0f766e"
+          onClear={onClearAcu}
         />
-        <ConfirmedChip
+        <RepairConfirmedChip
           label={`Operator ID: ${techInfo.technicianId}`}
           color="#fff"
-          bg="#435ebe"
+          bg="#0f766e"
           onClear={onClearTech}
         />
-        <ConfirmedChip
-          label={`Symptom: ${symptomLabel}`}
+        <RepairConfirmedChip
+          label={`Status: ${acuInfo.status}`}
           color="#fff"
-          bg={symptomLabel && symptomLabel !== "-" ? getDowntimeSymptomColor(symptomLabel) : "#64748b"}
+          bg={getRepairStatusColor(acuInfo.status)}
         />
       </div>
       {apiError && <p className="text-sm text-destructive">{apiError}</p>}
@@ -114,11 +115,9 @@ export function DowntimeConfirmStartStep({
           onClick={onConfirm}
           disabled={saving}
         >
-          {saving ? "Starting..." : "Queue for Maintenance"}
+          {saving ? "Starting..." : "Queue for Repair"}
         </Button>
       </div>
     </>
   );
 }
-
-

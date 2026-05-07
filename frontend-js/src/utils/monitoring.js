@@ -50,7 +50,6 @@ export function buildMonitoringTableData(floors) {
       tempLL: sensor.tempLL ?? null,
       humidUL: sensor.humidUL ?? null,
       humidLL: sensor.humidLL ?? null,
-      maintenanceOngoing: sensor.maintenanceOngoing ?? false,
     }))
   );
 }
@@ -71,25 +70,15 @@ export function buildMonitoringFloorSections(floor) {
   const activeSensors = floor.sensors.filter(
     (sensor) => getSensorStatus(sensor) === "active"
   );
-  const maintenanceSensors = floor.sensors
-    .filter((sensor) => getSensorStatus(sensor) === "maintenance")
-    .sort((left, right) => {
-      const leftTime = new Date(left.maintenanceStartedAt ?? 0).getTime();
-      const rightTime = new Date(right.maintenanceStartedAt ?? 0).getTime();
-      return leftTime - rightTime;
-    });
   const flaggedSensors = floor.sensors
-    .filter((sensor) => {
-      const status = getSensorStatus(sensor);
-      return status !== "active" && status !== "maintenance";
-    })
+    .filter((sensor) => getSensorStatus(sensor) !== "active")
     .sort(
       (left, right) =>
         STATUS_PRIORITY[getSensorStatus(left)] - STATUS_PRIORITY[getSensorStatus(right)]
     );
 
   const counts = {};
-  [...maintenanceSensors, ...flaggedSensors].forEach((sensor) => {
+  flaggedSensors.forEach((sensor) => {
     const status = getSensorStatus(sensor);
     counts[status] = (counts[status] || 0) + 1;
   });
@@ -98,14 +87,15 @@ export function buildMonitoringFloorSections(floor) {
     activeSensors,
     counts,
     flaggedSensors,
-    maintenanceSensors,
   };
 }
 
-export function buildMonitoringNotifyStateMap(floor, forwardedAreaIds) {
+export function buildMonitoringNotifyStateMap(floor, facilitiesAlertMap) {
   const states = {};
   floor.sensors.forEach((sensor) => {
-    states[sensor.areaId] = forwardedAreaIds.has(sensor.areaId) ? "forwarded" : "idle";
+    const activeAlert = facilitiesAlertMap.get(sensor.areaId);
+    const canNotifyAgain = activeAlert?.canNotifyAgain === true;
+    states[sensor.areaId] = activeAlert && !canNotifyAgain ? "forwarded" : "idle";
   });
   return states;
 }

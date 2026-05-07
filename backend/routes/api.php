@@ -8,6 +8,7 @@ use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TempHumid\BreachEventController;
 use App\Http\Controllers\TempHumid\FacilitiesAlertController;
 use App\Http\Controllers\TempHumid\DowntimeController;
+use App\Http\Controllers\TempHumid\RepairController;
 use App\Http\Controllers\TempHumid\SensorController;
 use App\Http\Controllers\TempHumid\SensorLimitController;
 use App\Http\Controllers\TempHumid\SensorReadingController;
@@ -81,6 +82,14 @@ Route::middleware(['auth:mat-auth'])->group(function () {
             Route::get('active',                      [DowntimeController::class, 'active']);
             Route::get('history',                     [DowntimeController::class, 'history']);
 
+        });
+        Route::prefix('repair')->group(function () {
+            Route::post('validate-acu',               [RepairController::class, 'validateAcu']);
+            Route::post('start',                      [RepairController::class, 'start']);
+            Route::post('mark-done/{id}',             [RepairController::class, 'markDone']);
+            Route::post('upload',                     [RepairController::class, 'upload']);
+            Route::get('active',                      [RepairController::class, 'active']);
+            Route::get('history',                     [RepairController::class, 'history']);
         });
     });
 });

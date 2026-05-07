@@ -7,7 +7,6 @@ import {
   FacilitiesAlertCardHeader,
   FacilitiesAlertDetails,
 } from "@/features/temphumid/facilities-alerts/components/FacilitiesAlertCardParts";
-import { useElapsedTimer } from "@/hooks/use-elapsed-timer";
 import {
   getFacilitiesAlertState,
   getFacilitiesVerifyState,
@@ -33,7 +32,6 @@ export function FacilitiesAlertCard({
 
   const alertState = getFacilitiesAlertState(alert);
   const verifyState = getFacilitiesVerifyState(alert);
-  const elapsed = useElapsedTimer(alert.maintenanceStartedAt);
 
   const closeForm = () => setActiveForm(null);
 
@@ -61,7 +59,7 @@ export function FacilitiesAlertCard({
       const updated = await unscheduleFacilitiesAlert(alert.id);
       onResolve(updated);
     } catch (err) {
-      setActionError(err.response?.data?.message ?? "Failed to cancel maintenance.");
+      setActionError(err.response?.data?.message ?? "Failed to cancel.");
     } finally {
       setActing(false);
     }
@@ -83,7 +81,6 @@ export function FacilitiesAlertCard({
         alert={alert}
         alertState={alertState}
         col={col}
-        elapsed={elapsed}
         onToggle={() => !acting && setExpanded((value) => !value)}
         verifyState={verifyState}
       />
@@ -134,6 +131,7 @@ export function FacilitiesAlertCard({
             acting={acting}
             onCloseForm={closeForm}
             onConflict={onConflict}
+            onOpenRepair={() => setActiveForm("repair")}
             onOpenSchedule={() => setActiveForm("schedule")}
             onOpenVerify={() => setActiveForm("verify")}
             onResolve={onResolve}
