@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { useSidebar } from "@/hooks/use-sidebar";
 import { useTheme } from "@/hooks/use-theme";
 import { useAuthContext } from "@/lib/auth/AuthHook";
-import { useEscalatedFacilitiesAlerts } from "@/hooks/use-escalated-facilities-alerts";
+import { useEscalatedFacilitiesAlerts } from "@/features/temphumid/facilities-alerts/hooks/use-escalated-facilities-alerts";
 import {
   DropdownMenu,
   DropdownMenuContent,

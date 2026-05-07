@@ -41,6 +41,8 @@ return [
             'charset'  => 'utf8',
             'prefix'   => '',
             'prefix_indexes' => true,
+            'encrypt' => env('DB_ENCRYPT_TEMPHUMID', 'no'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE_TEMPHUMID', 'true'),
         ],
 
         'sqlite' => [
@@ -120,8 +122,8 @@ return [
             'charset' => env('DB_CHARSET', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
+            'encrypt' => env('DB_ENCRYPT', 'no'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'true'),
         ],
 
         'sqlsrv_matemployees_reader' => [
@@ -135,8 +137,8 @@ return [
             'charset' => env('DB_CHARSET_MATEMPLOYEES_READER', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false')
+            'encrypt' => env('DB_ENCRYPT_MATEMPLOYEES_READER', 'no'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE_MATEMPLOYEES_READER', 'true'),
         ],
 
         'sqlsrv_matgallery_reader' => [
@@ -150,8 +152,8 @@ return [
             'charset' => env('DB_CHARSET_MATGALLERY_READER', 'utf8'),
             'prefix' => '',
             'prefix_indexes' => true,
-            // 'encrypt' => env('DB_ENCRYPT', 'yes'),
-            // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false')
+            'encrypt' => env('DB_ENCRYPT_MATGALLERY_READER', 'no'),
+            'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE_MATGALLERY_READER', 'true'),
         ],
 
     ],
