@@ -38,7 +38,7 @@ export function RepairListPanel({ records, onRowClick, onStartRepair }) {
           Active Repair
         </p>
         <p style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", margin: "2px 0 0" }}>
-          ACU Repair List
+          Facilities ACU Repair List
         </p>
       </div>
 

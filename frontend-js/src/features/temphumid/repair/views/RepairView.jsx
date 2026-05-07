@@ -73,7 +73,7 @@ export default function RepairView() {
           className="bg-background"
         >
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Manage ACU Repair</h1>
+            <h1 className="text-2xl font-bold text-foreground">Facilities ACU Repair</h1>
             <p className="mt-1 text-sm text-muted-foreground">{headerSummary}</p>
           </div>
           <Button

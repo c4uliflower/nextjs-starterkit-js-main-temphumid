@@ -2,7 +2,10 @@
 
 import { useState, useEffect, useCallback } from "react";
 import axios from "@/lib/axios";
-import { ESCALATION_THRESHOLD_MINS } from "@/features/temphumid/facilities-alerts/utils/facilities";
+import {
+  ESCALATION_THRESHOLD_MINS,
+  isFacilitiesDelayActionable,
+} from "@/features/temphumid/facilities-alerts/utils/facilities";
 
 // Copied from src/hooks/use-escalated-facilities-alerts.js as an additive scaffold.
 
@@ -29,11 +32,7 @@ export function useEscalatedFacilitiesAlerts() {
       });
 
       const alerts = response.data?.data ?? [];
-      const filtered = alerts.filter(
-        (alert) =>
-          !(alert.actionType === "maintenance" || alert.actionType === "repair") &&
-          minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
-      );
+      const filtered = alerts.filter(isFacilitiesDelayActionable);
 
       const enriched = filtered.map((alert) => {
         const mins = minutesSince(alert.acknowledgedAt);

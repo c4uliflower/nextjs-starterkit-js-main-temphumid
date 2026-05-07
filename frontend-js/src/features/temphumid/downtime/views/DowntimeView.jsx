@@ -73,7 +73,7 @@ export default function DowntimeView() {
           className="bg-background"
         >
           <div>
-            <h1 className="text-2xl font-bold text-foreground">Manage Sensor IoT Maintenance</h1>
+            <h1 className="text-2xl font-bold text-foreground">Sensor IoT Maintenance</h1>
             <p className="mt-1 text-sm text-muted-foreground">{headerSummary}</p>
           </div>
           <Button

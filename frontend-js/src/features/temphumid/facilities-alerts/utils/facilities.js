@@ -32,13 +32,21 @@ export const FACILITIES_STYLES = `
   }
 `;
 
+export function isFacilitiesDelayActionable(alert) {
+  const hasNextAction =
+    alert.status === "verifying" ||
+    alert.actionType === "maintenance" ||
+    alert.actionType === "repair";
+
+  return (
+    (alert.status === "acknowledged" || alert.status === "open") &&
+    !hasNextAction &&
+    minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
+  );
+}
+
 export function getFacilitiesEscalatedCount(alerts) {
-  return alerts.filter(
-    (alert) =>
-      !(alert.actionType === "maintenance" || alert.actionType === "repair") &&
-      alert.status !== "resolved" &&
-      minutesSince(alert.acknowledgedAt) >= ESCALATION_THRESHOLD_MINS
-  ).length;
+  return alerts.filter(isFacilitiesDelayActionable).length;
 }
 
 export function getFacilitiesActionLabel(alert) {
@@ -53,8 +61,7 @@ export function getFacilitiesAlertState(alert) {
   const isMaintenanceOngoing = !!alert.maintenanceOngoing;
   const workTypeLabel = alert.actionType === "repair" ? "Repair" : "Maintenance";
   const minutesDelayed = minutesSince(alert.acknowledgedAt);
-  const isEscalated =
-    alert.status !== "resolved" && !isScheduled && minutesDelayed >= ESCALATION_THRESHOLD_MINS;
+  const isEscalated = isFacilitiesDelayActionable(alert);
   const backendCount = Number(alert.escalationCount || 0);
   const frontendCount = Math.floor(minutesDelayed / ESCALATION_THRESHOLD_MINS);
   const escalationCount = Math.max(backendCount, frontendCount);
