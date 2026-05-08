@@ -50,7 +50,7 @@ Route::middleware(['auth:mat-auth'])->group(function () {
 
     Route::prefix('temphumid')->group(function (): void {
         Route::get('/sensors/readings/history/batch',    [SensorReadingController::class, 'batchHistory']);
-        Route::get('/sensors/{areaId}/readings/history', [SensorReadingController::class, 'history']);
+        Route::get('/sensors/readings/export',           [SensorReadingController::class, 'exportRaw']);
         Route::get('/sensors',                           [SensorController::class, 'index']);
         Route::get('/sensors/readings/current',          [SensorController::class, 'currentReadings']);
         Route::get('/sensors/readings/by-area/{areaId}', [SensorController::class, 'readingByAreaId']);
