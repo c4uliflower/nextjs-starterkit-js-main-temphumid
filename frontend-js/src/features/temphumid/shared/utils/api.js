@@ -127,8 +127,21 @@ export async function markDowntimeDone(id, payload) {
   return response.data?.data ?? null;
 }
 
-export async function uploadDowntimeRecords(ids) {
-  const response = await axios.post(`${API_BASE}/downtime/upload`, { ids });
+export async function uploadDowntimeRecords(records) {
+  const payload = Array.isArray(records)
+    ? {
+        ids: records.map((record) => Number(record.id ?? record)),
+        records: records
+          .filter((record) => typeof record === "object")
+          .map((record) => ({
+            id: Number(record.id),
+            maintenance_reason: record.reason || record.maintenance_reason || null,
+            remarks: record.remarks || null,
+          })),
+      }
+    : { ids: [] };
+
+  const response = await axios.post(`${API_BASE}/downtime/upload`, payload);
   return response.data?.data ?? null;
 }
 
@@ -163,7 +176,20 @@ export async function markRepairDone(id, payload) {
   return response.data?.data ?? null;
 }
 
-export async function uploadRepairRecords(ids) {
-  const response = await axios.post(`${API_BASE}/repair/upload`, { ids });
+export async function uploadRepairRecords(records) {
+  const payload = Array.isArray(records)
+    ? {
+        ids: records.map((record) => Number(record.id ?? record)),
+        records: records
+          .filter((record) => typeof record === "object")
+          .map((record) => ({
+            id: Number(record.id),
+            repair_reason: record.reason || record.repair_reason || null,
+            remarks: record.remarks || null,
+          })),
+      }
+    : { ids: [] };
+
+  const response = await axios.post(`${API_BASE}/repair/upload`, payload);
   return response.data?.data ?? null;
 }

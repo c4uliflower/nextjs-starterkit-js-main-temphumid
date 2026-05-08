@@ -319,8 +319,8 @@ class DowntimeController extends Controller
      *         it is uploaded.
      * Body:
      * {
-     *   maintenance_reason:  string  (display label from DOWNTIME_REASONS)
-     *   remarks:             string  (required technician remarks)
+     *   maintenance_reason:  string|null  (display label from DOWNTIME_REASONS)
+     *   remarks:             string|null  (technician remarks)
      * }
      *
      * Returns: { data: { id, maintenance_reason, remarks, marked_done_at, marked_done_by, duration_seconds } }
@@ -329,8 +329,8 @@ class DowntimeController extends Controller
     {
         $validated = $request->validate([
             // Final result is determined by Facilities lifecycle + next sensor reading.
-            'maintenance_reason' => ['required', 'string'],
-            'remarks'            => ['required', 'string'],
+            'maintenance_reason' => ['nullable', 'string'],
+            'remarks'            => ['nullable', 'string'],
         ]);
 
         try {
@@ -366,8 +366,8 @@ class DowntimeController extends Controller
                 ->table(self::TABLE)
                 ->where('ID', $id)
                 ->update([
-                    'maintenance_reason' => $validated['maintenance_reason'],
-                    'remarks'            => $validated['remarks'],
+                    'maintenance_reason' => $validated['maintenance_reason'] ?? null,
+                    'remarks'            => $validated['remarks'] ?? null,
                     'marked_done_at'     => $markedDoneAt,
                     'marked_done_by'     => $markedDoneBy,
                     'duration_seconds'   => $durationSeconds,
@@ -379,8 +379,8 @@ class DowntimeController extends Controller
                 'data'    => [
                     'id'                 => $id,
                     'symptom'            => $record->symptom,
-                    'maintenance_reason' => $validated['maintenance_reason'],
-                    'remarks'            => $validated['remarks'],
+                    'maintenance_reason' => $validated['maintenance_reason'] ?? null,
+                    'remarks'            => $validated['remarks'] ?? null,
                     'marked_done_at'     => $markedDoneAt->toISOString(),
                     'marked_done_by'     => $markedDoneBy,
                     'duration_seconds'   => $durationSeconds,
@@ -413,7 +413,7 @@ class DowntimeController extends Controller
      * same pattern as changed_by in SensorLimitController.
      *
      *
-     * Body: { ids: [int, ...] }
+     * Body: { ids: [int, ...], records?: [{ id, maintenance_reason, remarks }] }
      *
      * Returns: { updated: [int], skipped: [int], errors: [] }
      */
@@ -422,10 +422,16 @@ class DowntimeController extends Controller
         $request->validate([
             'ids'   => ['required', 'array', 'min:1'],
             'ids.*' => ['required', 'integer'],
+            'records' => ['nullable', 'array'],
+            'records.*.id' => ['required_with:records', 'integer'],
+            'records.*.maintenance_reason' => ['nullable', 'string'],
+            'records.*.remarks' => ['nullable', 'string'],
         ]);
 
         try {
             $ids = $request->input('ids');
+            $draftsById = collect($request->input('records', []))
+                ->keyBy(fn ($record) => (int) $record['id']);
 
             // uploaded_by is derived server-side from the authenticated user —
             // same pattern as changed_by in SensorLimitController.
@@ -458,14 +464,24 @@ class DowntimeController extends Controller
             $now = now('Asia/Manila');
 
             if (! empty($toUpdate)) {
-                DB::connection('temphumid')
-                    ->table(self::TABLE)
-                    ->whereIn('ID', $toUpdate)
-                    ->update([
+                foreach ($toUpdate as $id) {
+                    $draft = $draftsById->get((int) $id);
+                    $values = [
                         'status'      => self::STATUS_UPLOADED,
                         'uploaded_at' => $now,
                         'uploaded_by' => $uploadedBy,
-                    ]);
+                    ];
+
+                    if ($draft !== null) {
+                        $values['maintenance_reason'] = $draft['maintenance_reason'] ?? null;
+                        $values['remarks'] = $draft['remarks'] ?? null;
+                    }
+
+                    DB::connection('temphumid')
+                        ->table(self::TABLE)
+                        ->where('ID', $id)
+                        ->update($values);
+                }
             }
 
             return response()->json([
@@ -586,4 +602,3 @@ class DowntimeController extends Controller
         }
     }
 }
-

@@ -3,7 +3,7 @@
 import { CustomModal } from "@/components/custom/CustomModal";
 import { LoadingOverlay } from "@/components/ui/loadingoverlay";
 import { Button } from "@/components/ui/button";
-import { TriangleAlert, Upload } from "lucide-react";
+import { Hammer, TriangleAlert, Upload } from "lucide-react";
 
 import {
   RepairFormPanel,
@@ -61,35 +61,71 @@ export default function RepairView() {
       )}
 
       <div className="flex h-full flex-col overflow-hidden" style={{ minHeight: 0 }}>
-        <div
-          style={{
-            marginTop: 10,
-            padding: "12px 24px",
-            display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            flexShrink: 0,
-          }}
-          className="bg-background"
-        >
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Facilities ACU Repair</h1>
-            <p className="mt-1 text-sm text-muted-foreground">{headerSummary}</p>
-          </div>
-          <Button
-            type="button"
-            size="default"
-            variant="default"
-            style={{ cursor: "pointer" }}
-            disabled={pendingCount === 0}
-            onClick={openUploadModal}
+        <div className="bg-background" style={{ flexShrink: 0, padding: "16px 24px 12px" }}>
+          <div
+            className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between"
+            style={{
+              borderBottom: "1px solid var(--border)",
+              paddingBottom: 14,
+            }}
           >
-            <Upload size={16} style={{ marginRight: 6 }} />
-            Upload Repair Record{pendingCount > 0 ? ` (${pendingCount})` : ""}
-          </Button>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-bold text-foreground">Facilities ACU Repair</h1>
+                <span
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 999,
+                    color: "var(--muted-foreground)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: "3px 9px",
+                  }}
+                >
+                  {activeRecords.length} active
+                </span>
+                <span
+                  style={{
+                    border: "1px solid var(--border)",
+                    borderRadius: 999,
+                    color: "var(--muted-foreground)",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    padding: "3px 9px",
+                  }}
+                >
+                  {pendingCount} ready to upload
+                </span>
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">{headerSummary}</p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="default"
+                variant="outline"
+                style={{ cursor: "pointer" }}
+                onClick={openStartModal}
+              >
+                <Hammer size={16} style={{ marginRight: 6 }} />
+                Start Repair
+              </Button>
+              <Button
+                type="button"
+                size="default"
+                variant="default"
+                style={{ cursor: "pointer" }}
+                disabled={pendingCount === 0}
+                onClick={openUploadModal}
+              >
+                <Upload size={16} style={{ marginRight: 6 }} />
+                Upload Repair Record{pendingCount > 0 ? ` (${pendingCount})` : ""}
+              </Button>
+            </div>
+          </div>
         </div>
 
-        <div style={{ flex: 1, overflowY: "auto", padding: "4px 24px 24px" }}>
+        <div style={{ flex: 1, overflowY: "auto", padding: "8px 24px 24px" }}>
           {activeError && (
             <div
               style={{
@@ -110,39 +146,37 @@ export default function RepairView() {
             </div>
           )}
 
-          <div style={{ display: "flex", gap: 20, alignItems: "flex-start" }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
             <RepairListPanel
               records={activeRecords}
               onRowClick={openMarkDone}
               onStartRepair={openStartModal}
+              showStartButton={false}
             />
 
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 16 }}>
+            <div>
               <RepairFormPanel formData={formData} acuStatus={acuStatus} />
             </div>
-          </div>
 
-          {historyError && (
-            <div
-              style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: 8,
-                background: "#fef2f2",
-                border: "1px solid #fca5a5",
-                fontSize: 13,
-                color: "#b91c1c",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-            >
-              <TriangleAlert size={14} style={{ flexShrink: 0 }} />
-              {historyError}
-            </div>
-          )}
+            {historyError && (
+              <div
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 8,
+                  background: "#fef2f2",
+                  border: "1px solid #fca5a5",
+                  fontSize: 13,
+                  color: "#b91c1c",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
+              >
+                <TriangleAlert size={14} style={{ flexShrink: 0 }} />
+                {historyError}
+              </div>
+            )}
 
-          <div style={{ marginTop: 20 }}>
             <RepairHistoryPanel
               history={repairHistory}
               loading={historyLoading}
@@ -170,7 +204,9 @@ export default function RepairView() {
           if (!open) closeMarkDoneModal();
         }}
         title="Mark as Done"
-        description={activeRecord ? `${activeRecord.machineId} \u00B7 ${activeRecord.location}` : ""}
+        description={
+          activeRecord ? `${activeRecord.machineId} \u00B7 ${activeRecord.location}` : ""
+        }
         size="sm"
       >
         {activeRecord && (
@@ -205,9 +241,7 @@ export default function RepairView() {
         }}
         title="Repair Record"
         description={
-          selectedHistory
-            ? `${selectedHistory.machineId} \u00B7 ${selectedHistory.location}`
-            : ""
+          selectedHistory ? `${selectedHistory.machineId} \u00B7 ${selectedHistory.location}` : ""
         }
         size="sm"
       >

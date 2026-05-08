@@ -17,13 +17,43 @@ export function DowntimeFormPanel({ formData, symptom }) {
       <div
         style={{
           padding: "14px 20px",
-          background: "var(--primary)",
-          borderBottom: "1px solid #3550a8",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
         }}
       >
-        <p style={{ fontSize: 16, fontWeight: 700, color: "#fff", margin: "2px 0 0" }}>
-          {hasData ? formData.lineName : "Maintenance Form"}
-        </p>
+        <div>
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "var(--muted-foreground)",
+              letterSpacing: ".06em",
+              margin: 0,
+              textTransform: "uppercase",
+            }}
+          >
+            Maintenance Details
+          </p>
+          <p style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", margin: "2px 0 0" }}>
+            {hasData ? formData.lineName : "No record selected"}
+          </p>
+        </div>
+        <span
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 999,
+            color: hasData ? "#435ebe" : "var(--muted-foreground)",
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "3px 9px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {hasData ? "In review" : "Idle"}
+        </span>
       </div>
 
       <div style={{ padding: "14px 20px" }}>
@@ -35,18 +65,22 @@ export function DowntimeFormPanel({ formData, symptom }) {
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
-              padding: "28px 0",
+              padding: "18px 0",
               color: "var(--muted-foreground)",
             }}
           >
-            <p style={{ fontSize: 13, margin: 0, textAlign: "center" }}>
-              Start a maintenance or mark a record as done to see details here
-            </p>
+            <p style={{ fontSize: 13, margin: 0, textAlign: "center" }}>No maintenance details yet.</p>
           </div>
         ) : (
-          <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              columnGap: 20,
+            }}
+          >
             <PaneField
-              label="Symptom"
+              label="Status"
               value={symptom}
               valueStyle={symptom && symptom !== "-" ? { color: "#dc3545", fontWeight: 700 } : {}}
             />
@@ -57,7 +91,7 @@ export function DowntimeFormPanel({ formData, symptom }) {
             <PaneField label="Remarks" value={formData.remarks} />
             <PaneField label="Duration" value={formData.duration} />
             <PaneField label="Marked Done" value={formData.markedDone} />
-          </>
+          </div>
         )}
       </div>
     </div>

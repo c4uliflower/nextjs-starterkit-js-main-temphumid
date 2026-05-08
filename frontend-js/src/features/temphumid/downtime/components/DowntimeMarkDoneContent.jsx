@@ -22,23 +22,23 @@ export function MarkDoneContent({ record, onDone, onClose }) {
   };
 
   const handleConfirm = async () => {
-    if (!reason || !remarks.trim()) return;
-
     setSaving(true);
     setApiError(null);
 
     try {
-      const reasonLabel = DOWNTIME_REASONS.find((item) => item.id === reason)?.label ?? reason;
+      const reasonLabel = reason
+        ? DOWNTIME_REASONS.find((item) => item.id === reason)?.label ?? reason
+        : null;
       const data = await markDowntimeDone(record.id, {
         maintenance_reason: reasonLabel,
-        remarks: remarks.trim(),
+        remarks: remarks.trim() || null,
       });
 
       onDone(record.id, reason, {
         markedDoneAt: data.marked_done_at,
         durationSeconds: data.duration_seconds,
         reasonLabel,
-        remarks: data.remarks,
+        remarks: data.remarks ?? "",
       });
 
       reset();
@@ -54,7 +54,7 @@ export function MarkDoneContent({ record, onDone, onClose }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div>
         <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Reason for Maintenance <span style={{ color: "#dc3545" }}>*</span>
+          Reason for Maintenance
         </label>
         <Combobox
           options={REASON_SELECT_OPTIONS}
@@ -68,7 +68,7 @@ export function MarkDoneContent({ record, onDone, onClose }) {
 
       <div>
         <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Remarks <span style={{ color: "#dc3545" }}>*</span>
+          Remarks
         </label>
         <textarea
           value={remarks}
@@ -121,7 +121,7 @@ export function MarkDoneContent({ record, onDone, onClose }) {
           className="flex-1"
           style={{ cursor: "pointer" }}
           onClick={handleConfirm}
-          disabled={!reason || !remarks.trim() || saving}
+          disabled={saving}
         >
           {saving ? "Saving..." : "Confirm & Mark Done"}
         </Button>

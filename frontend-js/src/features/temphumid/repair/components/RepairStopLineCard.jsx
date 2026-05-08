@@ -8,6 +8,7 @@ export function RepairStopLineCard({ record, onClick }) {
   const elapsed = useRepairElapsed(record.processedAt, record.markedDoneAt);
   const statusDot = getRepairStatusColor(record.acuStatus);
   const isDisabled = !!record.markedDoneAt;
+  const destructiveColor = "var(--destructive)";
 
   return (
     <div
@@ -16,8 +17,8 @@ export function RepairStopLineCard({ record, onClick }) {
       }}
       style={{
         background: "var(--card)",
-        border: "1.5px solid #0f766e",
-        borderLeft: "4px solid #0f766e",
+        border: `1.5px solid ${destructiveColor}`,
+        borderLeft: `4px solid ${destructiveColor}`,
         borderRadius: 6,
         overflow: "hidden",
         cursor: isDisabled ? "default" : "pointer",
@@ -27,7 +28,8 @@ export function RepairStopLineCard({ record, onClick }) {
       }}
       onMouseEnter={(event) => {
         if (!isDisabled) {
-          event.currentTarget.style.boxShadow = "0 3px 10px rgba(15,118,110,.2)";
+          event.currentTarget.style.boxShadow =
+            "0 3px 10px color-mix(in oklch, var(--destructive) 28%, transparent)";
         }
       }}
       onMouseLeave={(event) => {
@@ -37,7 +39,7 @@ export function RepairStopLineCard({ record, onClick }) {
       <div
         style={{
           padding: "9px 14px",
-          background: "#0f766e",
+          background: destructiveColor,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -98,7 +100,7 @@ export function RepairStopLineCard({ record, onClick }) {
         <div style={{ fontSize: 10, color: "var(--muted-foreground)", marginTop: 1 }}>
           Started: {formatAbsolute(record.processedAt)}
           {" \u00B7 "}
-          <span style={{ color: "#0f766e", fontWeight: 600 }}>Tap to Mark Done</span>
+          <span style={{ color: destructiveColor, fontWeight: 600 }}>Tap to Mark Done</span>
         </div>
       </div>
     </div>
