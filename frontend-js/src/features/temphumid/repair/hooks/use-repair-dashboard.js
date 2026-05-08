@@ -24,10 +24,9 @@ export function useRepairDashboard() {
   const [activeRecords, setActiveRecords] = useState(repairCache.active ?? []);
   const [repairHistory, setRepairHistory] = useState(repairCache.history ?? []);
   const [pendingDone, setPendingDone] = useState(repairCache.pendingDone ?? []);
-  const [pageLoading, setPageLoading] = useState(
-    repairCache.active === null && repairCache.history === null
-  );
   const [historyLoading, setHistoryLoading] = useState(repairCache.history === null);
+  const [activeFetchDone, setActiveFetchDone] = useState(repairCache.active !== null);
+  const [historyFetchDone, setHistoryFetchDone] = useState(repairCache.history !== null);
   const [activeError, setActiveError] = useState(null);
   const [historyError, setHistoryError] = useState(null);
   const [startOpen, setStartOpen] = useState(false);
@@ -63,8 +62,7 @@ export function useRepairDashboard() {
   }, [acuStatus]);
 
   const refreshHistory = useCallback(async (options = {}) => {
-    const hasExistingHistory =
-      (repairCache.history && repairCache.history.length > 0) || repairHistory.length > 0;
+    const hasExistingHistory = repairCache.history !== null || repairHistory.length > 0;
 
     if (!hasExistingHistory) setHistoryLoading(true);
     setHistoryError(null);
@@ -73,9 +71,9 @@ export function useRepairDashboard() {
       const records = await fetchRepairHistory(options);
       const mapped = records.map(mapRepairHistoryRecord);
 
+      repairCache.history = mapped;
       setRepairHistory((previous) => {
         if (isSameRepairHistory(previous, mapped)) return previous;
-        repairCache.history = mapped;
         return mapped;
       });
     } catch (error) {
@@ -100,70 +98,67 @@ export function useRepairDashboard() {
     });
 
     setActiveError(null);
+    return mapped;
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    let activeResolved = repairCache.active !== null;
-    let historyResolved = repairCache.history !== null;
+    let ignore = false;
+    const hasCachedActive = repairCache.active !== null;
+    const hasCachedHistory = repairCache.history !== null;
 
-    const checkBothResolved = () => {
-      if (activeResolved && historyResolved) setPageLoading(false);
-    };
+    setHistoryLoading(!hasCachedHistory);
+    setActiveFetchDone(hasCachedActive);
+    setHistoryFetchDone(hasCachedHistory);
 
     const fetchActive = async () => {
       try {
         await syncActiveRecords(controller.signal);
       } catch (error) {
-        if (error.response?.status !== 404 && error.name !== "CanceledError") {
+        if (!ignore && error.response?.status !== 404 && error.name !== "CanceledError") {
           console.error("Failed to fetch active repair records:", error);
           setActiveError("Failed to load active records. Showing cached data.");
         }
       } finally {
-        activeResolved = true;
-        checkBothResolved();
+        if (!ignore) setActiveFetchDone(true);
       }
     };
 
     const fetchHistory = async () => {
-      const hasCachedHistory = repairCache.history !== null;
       if (!hasCachedHistory) setHistoryLoading(true);
 
       try {
         const records = await fetchRepairHistory({ signal: controller.signal });
         const mapped = records.map(mapRepairHistoryRecord);
 
+        repairCache.history = mapped;
         setRepairHistory((previous) => {
           if (isSameRepairHistory(previous, mapped)) return previous;
-          repairCache.history = mapped;
           return mapped;
         });
 
-        setHistoryError(null);
+        if (!ignore) setHistoryError(null);
       } catch (error) {
-        if (error.response?.status !== 404 && error.name !== "CanceledError") {
+        if (!ignore && error.response?.status !== 404 && error.name !== "CanceledError") {
           console.error("Failed to fetch repair history:", error);
           setHistoryError("Failed to load history. Showing cached data.");
         }
       } finally {
-        if (!hasCachedHistory) setHistoryLoading(false);
-        historyResolved = true;
-        checkBothResolved();
+        if (!ignore) {
+          if (!hasCachedHistory) setHistoryLoading(false);
+          setHistoryFetchDone(true);
+        }
       }
     };
 
     if (repairCache.active !== null) {
       setActiveRecords(repairCache.active);
-      activeResolved = true;
     }
 
     if (repairCache.history !== null) {
       setRepairHistory(repairCache.history);
-      setHistoryLoading(false);
-      historyResolved = true;
     }
 
-    checkBothResolved();
     fetchActive();
     fetchHistory();
 
@@ -178,6 +173,7 @@ export function useRepairDashboard() {
     }, 30_000);
 
     return () => {
+      ignore = true;
       clearInterval(poll);
       controller.abort();
     };
@@ -279,6 +275,7 @@ export function useRepairDashboard() {
   }, []);
 
   const stats = getRepairStats(activeRecords, pendingDone, repairHistory);
+  const pageLoading = !activeFetchDone || !historyFetchDone;
 
   return {
     activeError,

@@ -24,10 +24,9 @@ export function useDowntimeDashboard() {
   const [stopLineList, setStopLineList] = useState(downtimeCache.active ?? []);
   const [maintenanceHistory, setMaintenanceHistory] = useState(downtimeCache.history ?? []);
   const [pendingDone, setPendingDone] = useState(downtimeCache.pendingDone ?? []);
-  const [pageLoading, setPageLoading] = useState(
-    downtimeCache.active === null && downtimeCache.history === null
-  );
   const [historyLoading, setHistoryLoading] = useState(downtimeCache.history === null);
+  const [activeFetchDone, setActiveFetchDone] = useState(downtimeCache.active !== null);
+  const [historyFetchDone, setHistoryFetchDone] = useState(downtimeCache.history !== null);
   const [activeError, setActiveError] = useState(null);
   const [historyError, setHistoryError] = useState(null);
   const [startOpen, setStartOpen] = useState(false);
@@ -65,9 +64,7 @@ export function useDowntimeDashboard() {
   }, [symptom]);
 
   const refreshHistory = useCallback(async (options = {}) => {
-    const hasExistingHistory =
-      (downtimeCache.history && downtimeCache.history.length > 0) ||
-      maintenanceHistory.length > 0;
+    const hasExistingHistory = downtimeCache.history !== null || maintenanceHistory.length > 0;
 
     if (!hasExistingHistory) setHistoryLoading(true);
     setHistoryError(null);
@@ -76,9 +73,9 @@ export function useDowntimeDashboard() {
       const records = await fetchDowntimeHistory(options);
       const mapped = records.map(mapDowntimeHistoryRecord);
 
+      downtimeCache.history = mapped;
       setMaintenanceHistory((previous) => {
         if (isSameDowntimeHistory(previous, mapped)) return previous;
-        downtimeCache.history = mapped;
         return mapped;
       });
     } catch (error) {
@@ -103,70 +100,65 @@ export function useDowntimeDashboard() {
     });
 
     setActiveError(null);
+    return mapped;
   }, []);
 
   useEffect(() => {
     const controller = new AbortController();
-    let activeResolved = downtimeCache.active !== null;
-    let historyResolved = downtimeCache.history !== null;
+    let ignore = false;
+    const hasCachedActive = downtimeCache.active !== null;
+    const hasCachedHistory = downtimeCache.history !== null;
 
-    const checkBothResolved = () => {
-      if (activeResolved && historyResolved) setPageLoading(false);
-    };
+    setHistoryLoading(!hasCachedHistory);
+    setActiveFetchDone(hasCachedActive);
+    setHistoryFetchDone(hasCachedHistory);
 
     const fetchActive = async () => {
       try {
         await syncActiveRecords(controller.signal);
       } catch (error) {
-        if (error.response?.status !== 404 && error.name !== "CanceledError") {
+        if (!ignore && error.response?.status !== 404 && error.name !== "CanceledError") {
           console.error("Failed to fetch active downtime records:", error);
           setActiveError("Failed to load active records. Showing cached data.");
         }
       } finally {
-        activeResolved = true;
-        checkBothResolved();
+        if (!ignore) setActiveFetchDone(true);
       }
     };
 
     const fetchHistory = async () => {
-      const hasCachedHistory = downtimeCache.history !== null;
-      if (!hasCachedHistory) setHistoryLoading(true);
-
       try {
         const records = await fetchDowntimeHistory({ signal: controller.signal });
         const mapped = records.map(mapDowntimeHistoryRecord);
 
+        downtimeCache.history = mapped;
         setMaintenanceHistory((previous) => {
           if (isSameDowntimeHistory(previous, mapped)) return previous;
-          downtimeCache.history = mapped;
           return mapped;
         });
 
-        setHistoryError(null);
+        if (!ignore) setHistoryError(null);
       } catch (error) {
-        if (error.response?.status !== 404 && error.name !== "CanceledError") {
+        if (!ignore && error.response?.status !== 404 && error.name !== "CanceledError") {
           console.error("Failed to fetch downtime history:", error);
           setHistoryError("Failed to load history. Showing cached data.");
         }
       } finally {
-        if (!hasCachedHistory) setHistoryLoading(false);
-        historyResolved = true;
-        checkBothResolved();
+        if (!ignore) {
+          if (!hasCachedHistory) setHistoryLoading(false);
+          setHistoryFetchDone(true);
+        }
       }
     };
 
     if (downtimeCache.active !== null) {
       setStopLineList(downtimeCache.active);
-      activeResolved = true;
     }
 
     if (downtimeCache.history !== null) {
       setMaintenanceHistory(downtimeCache.history);
-      setHistoryLoading(false);
-      historyResolved = true;
     }
 
-    checkBothResolved();
     fetchActive();
     fetchHistory();
 
@@ -181,6 +173,7 @@ export function useDowntimeDashboard() {
     }, 30_000);
 
     return () => {
+      ignore = true;
       clearInterval(poll);
       controller.abort();
     };
@@ -283,6 +276,7 @@ export function useDowntimeDashboard() {
   }, []);
 
   const stats = getDowntimeStats(stopLineList, pendingDone, maintenanceHistory);
+  const pageLoading = !activeFetchDone || !historyFetchDone;
 
   return {
     activeError,
