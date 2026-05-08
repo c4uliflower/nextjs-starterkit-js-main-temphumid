@@ -10,12 +10,11 @@ import { buildRepairHistoryColumns } from "@/features/temphumid/repair/component
 import { RepairHistoryDetail } from "@/features/temphumid/repair/components/RepairHistoryDetail";
 import { RepairStopLineCard } from "@/features/temphumid/repair/components/RepairStopLineCard";
 
-export function RepairListPanel({ records, onRowClick, onStartRepair }) {
+export function RepairListPanel({ records, onRowClick, onStartRepair, showStartButton = true }) {
   return (
     <div
       style={{
-        width: 340,
-        flexShrink: 0,
+        width: "100%",
         background: "var(--card)",
         border: "1px solid var(--border)",
         borderRadius: 8,
@@ -90,18 +89,20 @@ export function RepairListPanel({ records, onRowClick, onStartRepair }) {
         )}
       </div>
 
-      <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
-        <Button
-          type="button"
-          size="default"
-          variant="default"
-          className="w-full"
-          style={{ cursor: "pointer" }}
-          onClick={onStartRepair}
-        >
-          Start Repair
-        </Button>
-      </div>
+      {showStartButton && (
+        <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
+          <Button
+            type="button"
+            size="default"
+            variant="default"
+            className="w-full"
+            style={{ cursor: "pointer" }}
+            onClick={onStartRepair}
+          >
+            Start Repair
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -121,13 +122,43 @@ export function RepairFormPanel({ formData, acuStatus }) {
       <div
         style={{
           padding: "14px 20px",
-          background: "var(--primary)",
-          borderBottom: "1px solid #0d625c",
+          borderBottom: "1px solid var(--border)",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
         }}
       >
-        <p style={{ fontSize: 16, fontWeight: 700, color: "#fff", margin: "2px 0 0" }}>
-          {hasData ? formData.machineId : "Repair Form"}
-        </p>
+        <div>
+          <p
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              color: "var(--muted-foreground)",
+              letterSpacing: ".06em",
+              margin: 0,
+              textTransform: "uppercase",
+            }}
+          >
+            Repair Details
+          </p>
+          <p style={{ fontSize: 16, fontWeight: 700, color: "var(--foreground)", margin: "2px 0 0" }}>
+            {hasData ? formData.machineId : "No record selected"}
+          </p>
+        </div>
+        <span
+          style={{
+            border: "1px solid var(--border)",
+            borderRadius: 999,
+            color: hasData ? "#0f766e" : "var(--muted-foreground)",
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "3px 9px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {hasData ? "In review" : "Idle"}
+        </span>
       </div>
 
       <div style={{ padding: "14px 20px" }}>
@@ -139,31 +170,33 @@ export function RepairFormPanel({ formData, acuStatus }) {
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
-              padding: "28px 0",
+              padding: "18px 0",
               color: "var(--muted-foreground)",
             }}
           >
-            <p style={{ fontSize: 13, margin: 0, textAlign: "center" }}>
-              Start a repair or mark a record as done to see details here
-            </p>
+            <p style={{ fontSize: 13, margin: 0, textAlign: "center" }}>No repair details yet.</p>
           </div>
         ) : (
-          <>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
+              columnGap: 20,
+            }}
+          >
             <RepairPaneField
               label="Status"
               value={acuStatus}
               valueStyle={acuStatus === "Active" ? { color: "#16a34a", fontWeight: 700 } : {}}
             />
             <RepairPaneField label="Machine ID" value={formData.machineId} />
-            <RepairPaneField label="Machine QR" value={formData.machineQr} />
             <RepairPaneField label="Location" value={formData.location} />
-            <RepairPaneField label="Description" value={formData.description} />
             <RepairPaneField label="Operator" value={formData.technicianId} />
             <RepairPaneField label="Reason" value={formData.reason} />
             <RepairPaneField label="Remarks" value={formData.remarks} />
             <RepairPaneField label="Duration" value={formData.duration} />
             <RepairPaneField label="Marked Done" value={formData.markedDone} />
-          </>
+          </div>
         )}
       </div>
     </div>

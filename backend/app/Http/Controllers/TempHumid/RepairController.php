@@ -13,7 +13,7 @@ use Throwable;
 
 class RepairController extends Controller
 {
-    private const MACHINE_VIEW = 'vw_MachineMatrix_tbl_MACHINES_Facilities';
+    private const MACHINE_VIEW = 'vw_TempHumid_Facilities_ACU_QRs';
     private const TABLE = 'TempHumid_Repair_Downtime_Log';
 
     private const STATUS_ONGOING = 'ongoing';
@@ -194,8 +194,8 @@ class RepairController extends Controller
     public function markDone(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'repair_reason' => ['required', 'string'],
-            'remarks' => ['required', 'string'],
+            'repair_reason' => ['nullable', 'string'],
+            'remarks' => ['nullable', 'string'],
         ]);
 
         try {
@@ -227,8 +227,8 @@ class RepairController extends Controller
                 ->table(self::TABLE)
                 ->where('ID', $id)
                 ->update([
-                    'repair_reason' => $validated['repair_reason'],
-                    'remarks' => $validated['remarks'],
+                    'repair_reason' => $validated['repair_reason'] ?? null,
+                    'remarks' => $validated['remarks'] ?? null,
                     'marked_done_at' => $markedDoneAt,
                     'marked_done_by' => $markedDoneBy,
                     'duration_seconds' => $durationSeconds,
@@ -238,8 +238,8 @@ class RepairController extends Controller
                 'message' => 'Repair record marked as done.',
                 'data' => [
                     'id' => $id,
-                    'repair_reason' => $validated['repair_reason'],
-                    'remarks' => $validated['remarks'],
+                    'repair_reason' => $validated['repair_reason'] ?? null,
+                    'remarks' => $validated['remarks'] ?? null,
                     'marked_done_at' => $markedDoneAt->toISOString(),
                     'marked_done_by' => $markedDoneBy,
                     'duration_seconds' => $durationSeconds,
@@ -264,10 +264,16 @@ class RepairController extends Controller
         $request->validate([
             'ids' => ['required', 'array', 'min:1'],
             'ids.*' => ['required', 'integer'],
+            'records' => ['nullable', 'array'],
+            'records.*.id' => ['required_with:records', 'integer'],
+            'records.*.repair_reason' => ['nullable', 'string'],
+            'records.*.remarks' => ['nullable', 'string'],
         ]);
 
         try {
             $ids = $request->input('ids');
+            $draftsById = collect($request->input('records', []))
+                ->keyBy(fn ($record) => (int) $record['id']);
             $user = $request->user();
             $uploadedBy = $user
                 ? trim($user->first_name . ' ' . $user->last_name) . ' (' . $user->employee_no . ')'
@@ -294,14 +300,24 @@ class RepairController extends Controller
             $now = now('Asia/Manila');
 
             if (! empty($toUpdate)) {
-                DB::connection('temphumid')
-                    ->table(self::TABLE)
-                    ->whereIn('ID', $toUpdate)
-                    ->update([
+                foreach ($toUpdate as $id) {
+                    $draft = $draftsById->get((int) $id);
+                    $values = [
                         'status' => self::STATUS_UPLOADED,
                         'uploaded_at' => $now,
                         'uploaded_by' => $uploadedBy,
-                    ]);
+                    ];
+
+                    if ($draft !== null) {
+                        $values['repair_reason'] = $draft['repair_reason'] ?? null;
+                        $values['remarks'] = $draft['remarks'] ?? null;
+                    }
+
+                    DB::connection('temphumid')
+                        ->table(self::TABLE)
+                        ->where('ID', $id)
+                        ->update($values);
+                }
             }
 
             return response()->json([

@@ -4,12 +4,16 @@ import { Button } from "@/components/ui/button";
 
 import { DowntimeStopLineCard } from "@/features/temphumid/downtime/components/DowntimeStopLineCard";
 
-export function StopLineListPanel({ records, onRowClick, onStartDowntime }) {
+export function StopLineListPanel({
+  records,
+  onRowClick,
+  onStartDowntime,
+  showStartButton = true,
+}) {
   return (
     <div
       style={{
-        width: 340,
-        flexShrink: 0,
+        width: "100%",
         background: "var(--card)",
         border: "1px solid var(--border)",
         borderRadius: 8,
@@ -84,19 +88,20 @@ export function StopLineListPanel({ records, onRowClick, onStartDowntime }) {
         )}
       </div>
 
-      <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
-        <Button
-          type="button"
-          size="default"
-          variant="default"
-          className="w-full"
-          style={{ cursor: "pointer" }}
-          onClick={onStartDowntime}
-        >
-          Start Maintenance
-        </Button>
-      </div>
+      {showStartButton && (
+        <div style={{ padding: 12, borderTop: "1px solid var(--border)" }}>
+          <Button
+            type="button"
+            size="default"
+            variant="default"
+            className="w-full"
+            style={{ cursor: "pointer" }}
+            onClick={onStartDowntime}
+          >
+            Start Maintenance
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
-
