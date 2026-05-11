@@ -5,456 +5,70 @@ declare(strict_types=1);
 namespace App\Http\Controllers\TempHumid;
 
 use App\Http\Controllers\Controller;
+use App\Services\TempHumid\SensorService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 class SensorController extends Controller
 {
-    /**
-     * Maps frontend floor slugs to Plant + Floor column values in Temp_Logger_Chip_ID.
-     */
-    private const FLOOR_MAP = [
-        'p1f1'  => ['plant' => '1',     'floor' => '1'],
-        'p1f2'  => ['plant' => '1',     'floor' => '2'],
-        'p2f1'  => ['plant' => '2',     'floor' => '1'],
-        'p2f2'  => ['plant' => '2',     'floor' => '2', 'extra_area_ids' => ['P1F1-16']],
-        'p12f2' => ['plant' => '1 & 2', 'floor' => '2'],
-        'wh'    => ['plant' => '2',     'floor' => '1', 'location_like' => 'P2F1WH'],
-    ];
+    public function __construct(
+        private readonly SensorService $sensorService,
+    ) {}
 
-    /**
-     * GET /api/temphumid/sensors
-     * Full sensor registry, optionally filtered by floor slug.
-     * Used by: all map pages on load (sensor list + limits seeding).
-     *
-     * Query params:
-     *   ?floor=p1f1   (optional)
-     */
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = DB::connection('temphumid')
-                ->table('Temp_Logger_Chip_ID');
+            return response()->json([
+                'data' => $this->sensorService->registry($request->query('floor')),
+            ], 200);
+        } catch (Throwable $exception) {
+            Log::error('SensorController::index failed', ['error' => $exception->getMessage()]);
 
-            // Apply floor filter if ?floor= is present
-            $this->applyFloorFilter($query, $request);
-
-            $sensors = $query->get();
-            $data    = $sensors->map(fn ($s) => $this->formatSensor($s));
-
-            return response()->json(['data' => $data], 200);
-
-        } catch (Throwable $e) {
-            Log::error('SensorController::index failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to fetch sensors.'], 500);
         }
     }
 
-    /**
-     * GET /api/temphumid/sensors/readings/current
-     * Latest reading per sensor from TempHumid_Calib_Log (already corrected).
-     * Breach detection applied server-side against limits fetched from
-     * TempHumid_Limits_Log (latest row per areaId).
-     * Optionally filtered by floor slug.
-     * Used by: monitoring page (all floors), each map page (polling every 30s).
-     *
-     * Query params:
-     *   ?floor=p1f1   (optional)
-     */
     public function currentReadings(Request $request): JsonResponse
     {
         try {
-            $query = DB::connection('temphumid')
-                ->table('Temp_Logger_Chip_ID')
-                ->where('Status', 'Active');
+            return response()->json([
+                'data' => $this->sensorService->currentReadings($request->query('floor')),
+            ], 200);
+        } catch (Throwable $exception) {
+            Log::error('SensorController::currentReadings failed', ['error' => $exception->getMessage()]);
 
-            // Apply floor filter if ?floor= is present
-            $this->applyFloorFilter($query, $request);
-
-            $sensors = $query->get();
-
-            // Fetch latest limits for all sensors in one query, keyed by areaId.
-            // Uses a subquery to get the single most-recent row per Area ID.
-            $areaIds      = $sensors->pluck('Area ID')->all();
-            $latestLimits = $this->fetchLatestLimits($areaIds);
-
-            $results = [];
-            foreach ($sensors as $sensor) {
-                $results[] = $this->buildCurrentReading($sensor, $latestLimits);
-            }
-
-            return response()->json(['data' => $results], 200);
-
-        } catch (Throwable $e) {
-            Log::error('SensorController::currentReadings failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to fetch current readings.'], 500);
         }
     }
 
-    /**
-     * GET /api/temphumid/sensors/readings/by-area/{areaId}
-     *
-     * Returns the latest reading for a single sensor by areaId.
-     * Used by: facilities page poll to check verifying alerts.
-     * Reuses the same limit resolution and breach detection as currentReadings().
-     *
-     * Query params:
-     *   ?verifiedAfter=2024-01-01T00:00:00Z   only consider readings after this timestamp
-     */
     public function readingByAreaId(string $areaId, Request $request): JsonResponse
     {
         try {
-            $sensor = DB::connection('temphumid')
-                ->table('Temp_Logger_Chip_ID')
-                ->where('Area ID', $areaId)
-                ->where('Status', 'Active')
-                ->first();
+            $result = $this->sensorService->readingByAreaId($areaId, $request->query('verifiedAfter'));
 
-            if (! $sensor) {
-                return response()->json(['message' => 'Sensor not found.'], 404);
-            }
-
-            $latestLimits = $this->fetchLatestLimits([$areaId]);
-
-            $chipId = $sensor->{'Chip ID'};
-
-            $query = DB::connection('temphumid')
-                ->table('TempHumid_Calib_Log')
-                ->where('Chip ID', $chipId)
-                ->whereNotNull('Temperature')
-                ->whereNotNull('Humidity');
-
-            if ($request->has('verifiedAfter')) {
-                $query->where('Day_Time', '>', $request->query('verifiedAfter'));
-            }
-
-            $reading = $query->orderByDesc('Day_Time')->first();
-
-            if (! $reading) {
-                return response()->json([
-                    'data' => [
-                        'areaId'   => $areaId,
-                        'hasData'  => false,
-                        'status'   => 'no-data',
-                        'lastSeen' => null,
-                    ],
-                ], 200);
-            }
-
-            $limRow  = $latestLimits[$areaId] ?? null;
-            $tempUL  = $limRow ? $limRow->Temp_Upper_Limit  : $sensor->Temp_Upper_Limit;
-            $tempLL  = $limRow ? $limRow->Temp_Lower_Limit  : $sensor->Temp_Lower_Limit;
-            $humidUL = $limRow ? $limRow->Humid_Upper_Limit : $sensor->Humid_Upper_Limit;
-            $humidLL = $limRow ? $limRow->Humid_Lower_Limit : $sensor->Humid_Lower_Limit;
-
-            $temp  = (float) $reading->Temperature;
-            $humid = (float) $reading->Humidity;
-
-            $breached =
-                $temp  > (float) $tempUL ||
-                $temp  < (float) $tempLL ||
-                $humid > (float) $humidUL ||
-                $humid < (float) $humidLL;
-
-            return response()->json([
-                'data' => [
-                    'areaId'      => $areaId,
-                    'chipId'      => $chipId,
-                    'lineName'    => $sensor->{'Line Name'},
-                    'plant'       => $sensor->Plant,
-                    'floor'       => $sensor->Floor,
-                    'location'    => $sensor->Location,
-                    'hasData'     => true,
-                    'temperature' => round($temp, 2),
-                    'humidity'    => round($humid, 2),
-                    'heatIndex'   => $reading->{'Heat Index'} !== null
-                        ? round((float) $reading->{'Heat Index'}, 2)
-                        : null,
-                    'lastSeen'    => $reading->Day_Time,
-                    'status'      => $breached ? 'breach' : 'ok',
-                    'limits'      => [
-                        'tempUL'  => $tempUL,
-                        'tempLL'  => $tempLL,
-                        'humidUL' => $humidUL,
-                        'humidLL' => $humidLL,
-                    ],
-                ],
-            ], 200);
-
-        } catch (Throwable $e) {
+            return response()->json($result['body'], $result['status']);
+        } catch (Throwable $exception) {
             Log::error('SensorController::readingByAreaId failed', [
                 'areaId' => $areaId,
-                'error'  => $e->getMessage(),
+                'error' => $exception->getMessage(),
             ]);
+
             return response()->json(['message' => 'Failed to fetch reading.'], 500);
         }
     }
 
-    /**
-     * GET /api/temphumid/dashboard/summary
-     * Aggregate stats for dashboard stat cards.
-     * Returns: avgTemp, avgHumid, activeSensorCount, breachCount.
-     */
     public function summary(): JsonResponse
     {
         try {
-            $sensors = DB::connection('temphumid')
-                ->table('Temp_Logger_Chip_ID')
-                ->where('Status', 'Active')
-                ->get();
-
-            // Fetch latest limits for all sensors in one query
-            $areaIds      = $sensors->pluck('Area ID')->all();
-            $latestLimits = $this->fetchLatestLimits($areaIds);
-
-            $temps       = [];
-            $humids      = [];
-            $breachCount = 0;
-
-            foreach ($sensors as $sensor) {
-                $reading = $this->buildCurrentReading($sensor, $latestLimits);
-
-                if ($reading['hasData']) {
-                    $temps[]  = $reading['temperature'];
-                    $humids[] = $reading['humidity'];
-
-                    if ($reading['status'] === 'breach') {
-                        $breachCount++;
-                    }
-                }
-            }
-
             return response()->json([
-                'data' => [
-                    'avgTemperature'    => count($temps)  > 0
-                                            ? round(array_sum($temps)  / count($temps),  1)
-                                            : null,
-                    'avgHumidity'       => count($humids) > 0
-                                            ? round(array_sum($humids) / count($humids), 1)
-                                            : null,
-                    'activeSensorCount' => $sensors->count(),
-                    'breachCount'       => $breachCount,
-                ],
+                'data' => $this->sensorService->summary(),
             ], 200);
+        } catch (Throwable $exception) {
+            Log::error('SensorController::summary failed', ['error' => $exception->getMessage()]);
 
-        } catch (Throwable $e) {
-            Log::error('SensorController::summary failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to fetch dashboard summary.'], 500);
         }
-    }
-
-    // -------------------------------------------------------------------------
-    // Private helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Applies a floor slug filter to the given query builder if ?floor= is present
-     * in the request. Resolves the slug against FLOOR_MAP and applies the
-     * appropriate Plant/Floor/Location constraints.
-     *
-     * Extracted to avoid duplicating this block in index() and currentReadings().
-     *
-     * @param  \Illuminate\Database\Query\Builder  $query
-     * @param  Request                             $request
-     */
-    private function applyFloorFilter($query, Request $request): void
-    {
-        if (! $request->has('floor')) {
-            return;
-        }
-
-        $slug = strtolower($request->query('floor'));
-        $map  = self::FLOOR_MAP[$slug] ?? null;
-
-        if (! $map) {
-            return;
-        }
-
-        $query->where(function ($q) use ($map) {
-            $q->where('Plant', $map['plant'])
-              ->where('Floor', $map['floor']);
-
-            // Some floors (e.g. WH) need an additional Location filter
-            // to distinguish them from other floors with the same Plant/Floor values
-            if (isset($map['location_like'])) {
-                $q->where('Location', 'like', '%' . $map['location_like'] . '%');
-            }
-        });
-
-        // Some floors (e.g. p2f2) include sensors from a different area ID
-        // that don't match the Plant/Floor filter above (e.g. CIS on P1F1-16)
-        if (! empty($map['extra_area_ids'])) {
-            $query->orWhere(function ($q) use ($map) {
-                $q->whereIn('Area ID', $map['extra_area_ids']);
-            });
-        }
-    }
-
-    /**
-     * Fetch the latest limits row from TempHumid_Limits_Log for each areaId,
-     * returned as an associative array keyed by areaId.
-     *
-     * Uses a subquery to get only the single most-recent row per Area ID,
-     * so this is always one round-trip regardless of sensor count.
-     *
-     * Falls back gracefully — if a sensor has no log entry, it won't appear
-     * in the returned array, and buildCurrentReading() falls back to
-     * Temp_Logger_Chip_ID values.
-     *
-     * @param  string[]  $areaIds
-     * @return array<string, object>   areaId → limits row
-     */
-    private function fetchLatestLimits(array $areaIds): array
-    {
-        if (empty($areaIds)) {
-            return [];
-        }
-
-        // Subquery: rank rows per Area ID by changed_at DESC, ID DESC
-        $rows = DB::connection('temphumid')
-            ->table('TempHumid_Limits_Log as ll')
-            ->whereIn('ll.Area ID', $areaIds)
-            ->where(function ($q) {
-                // Only keep the row where no newer row exists for the same Area ID
-                $q->whereNotExists(function ($sub) {
-                    $sub->from('TempHumid_Limits_Log as ll2')
-                        ->whereColumn('ll2.Area ID', 'll.Area ID')
-                        ->where(function ($inner) {
-                            $inner->where('ll2.changed_at', '>', DB::raw('ll.changed_at'))
-                                  ->orWhere(function ($tie) {
-                                      $tie->where('ll2.changed_at', '=', DB::raw('ll.changed_at'))
-                                          ->where('ll2.ID', '>', DB::raw('ll.ID'));
-                                  });
-                        });
-                });
-            })
-            ->get(['Area ID', 'Temp_Upper_Limit', 'Temp_Lower_Limit', 'Humid_Upper_Limit', 'Humid_Lower_Limit']);
-
-        $map = [];
-        foreach ($rows as $row) {
-            $map[$row->{'Area ID'}] = $row;
-        }
-
-        return $map;
-    }
-
-    /**
-     * Format a raw Temp_Logger_Chip_ID row into the standard sensor shape.
-     * Limits here still come from Temp_Logger_Chip_ID — this is used by
-     * the index() sensor registry endpoint only.
-     */
-    private function formatSensor(object $sensor): array
-    {
-        return [
-            'areaId'          => $sensor->{'Area ID'},
-            'chipId'          => $sensor->{'Chip ID'},
-            'lineName'        => $sensor->{'Line Name'},
-            'plant'           => $sensor->Plant,
-            'floor'           => $sensor->Floor,
-            'location'        => $sensor->Location,
-            'listId'          => $sensor->ListID,
-            'status'          => $sensor->Status,
-            'ipAddress'       => trim($sensor->IP_Address ?? ''),
-            'correctionTemp'  => $sensor->{'Correction Temp'}  ?? 0,
-            'correctionHumid' => $sensor->{'Correction Humid'} ?? 0,
-            'limits'          => [
-                'tempUL'  => $sensor->Temp_Upper_Limit,
-                'tempLL'  => $sensor->Temp_Lower_Limit,
-                'humidUL' => $sensor->Humid_Upper_Limit,
-                'humidLL' => $sensor->Humid_Lower_Limit,
-            ],
-        ];
-    }
-
-    /**
-     * Fetch the latest reading for a sensor from TempHumid_Calib_Log.
-     * Values are already corrected — no offset math needed.
-     *
-     * Limits and breach detection use the pre-fetched $latestLimits map
-     * (from TempHumid_Limits_Log). Falls back to Temp_Logger_Chip_ID
-     * values if no log entry exists for this sensor yet.
-     *
-     * NOTE: activeLocation / inactive-breach is NOT derived here —
-     *       that stays frontend-only via the INACTIVE_AREAS set.
-     *
-     * @param  object                $sensor       Row from Temp_Logger_Chip_ID
-     * @param  array<string, object> $latestLimits Keyed by areaId
-     */
-    private function buildCurrentReading(object $sensor, array $latestLimits): array
-    {
-        $chipId  = $sensor->{'Chip ID'};
-        $areaId  = $sensor->{'Area ID'};
-        $reading = null;
-
-        try {
-            $reading = DB::connection('temphumid')
-                ->table('TempHumid_Calib_Log')
-                ->where('Chip ID', $chipId)
-                ->whereNotNull('Temperature')
-                ->whereNotNull('Humidity')
-                ->orderByDesc('Day_Time')
-                ->first();
-        } catch (Throwable $e) {
-            Log::warning('Could not read TempHumid_Calib_Log for chip', [
-                'chipId' => $chipId,
-                'error'  => $e->getMessage(),
-            ]);
-        }
-
-        // Resolve limits: prefer Limits_Log, fall back to Temp_Logger_Chip_ID
-        $limRow  = $latestLimits[$areaId] ?? null;
-        $tempUL  = $limRow ? $limRow->Temp_Upper_Limit  : $sensor->Temp_Upper_Limit;
-        $tempLL  = $limRow ? $limRow->Temp_Lower_Limit  : $sensor->Temp_Lower_Limit;
-        $humidUL = $limRow ? $limRow->Humid_Upper_Limit : $sensor->Humid_Upper_Limit;
-        $humidLL = $limRow ? $limRow->Humid_Lower_Limit : $sensor->Humid_Lower_Limit;
-
-        $base = [
-            'areaId'   => $areaId,
-            'chipId'   => $chipId,
-            'lineName' => $sensor->{'Line Name'},
-            'plant'    => $sensor->Plant,
-            'floor'    => $sensor->Floor,
-            'location' => $sensor->Location,
-            'limits'   => [
-                'tempUL'  => $tempUL,
-                'tempLL'  => $tempLL,
-                'humidUL' => $humidUL,
-                'humidLL' => $humidLL,
-            ],
-        ];
-
-        if (! $reading) {
-            return array_merge($base, [
-                'hasData'     => false,
-                'temperature' => null,
-                'humidity'    => null,
-                'heatIndex'   => null,
-                'lastSeen'    => null,
-                'status'      => 'no-data',
-            ]);
-        }
-
-        $temp  = (float) $reading->Temperature;
-        $humid = (float) $reading->Humidity;
-
-        $breached =
-            $temp  > (float) $tempUL ||
-            $temp  < (float) $tempLL ||
-            $humid > (float) $humidUL ||
-            $humid < (float) $humidLL;
-
-        return array_merge($base, [
-            'hasData'     => true,
-            'temperature' => round($temp,  2),
-            'humidity'    => round($humid, 2),
-            'heatIndex'   => $reading->{'Heat Index'} !== null
-                                ? round((float) $reading->{'Heat Index'}, 2)
-                                : null,
-            'lastSeen'    => $reading->Day_Time,
-            'status'      => $breached ? 'breach' : 'ok',
-        ]);
     }
 }

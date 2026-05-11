@@ -29,6 +29,7 @@ export function MonitoringSensorReadings({ sensor, config }) {
 }
 
 export function MonitoringSensorBreachActions({
+  canNotify = true,
   isForwarded,
   isSending,
   onNotify,
@@ -46,7 +47,7 @@ export function MonitoringSensorBreachActions({
         Exceeds limit
       </div>
 
-      {isForwarded ? (
+      {!canNotify ? null : isForwarded ? (
         <div
           style={{
             display: "flex",
