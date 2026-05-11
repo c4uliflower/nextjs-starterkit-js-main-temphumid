@@ -12,6 +12,17 @@ import { STATUS_CONFIG, getSensorStatus } from "@/features/temphumid/sensor-stat
 
 // Copied from the current temp/humid monitoring route page as an additive scaffold.
 
+const FACILITIES_NOTIFY_EXCLUDED_AREA_IDS = new Set([
+  "P1F1-10",
+  "P2F1-16",
+  "P2F1-17",
+  "P1F1-09",
+  "P1F1-07",
+  "P1F1-11",
+  "P1F1-12",
+  "P1F1-13",
+]);
+
 export function MonitoringSensorStatusRow({
   sensor,
   index,
@@ -25,6 +36,7 @@ export function MonitoringSensorStatusRow({
   const btnState = notifyState ?? "idle";
   const isForwarded = btnState === "forwarded";
   const isSending = btnState === "sending";
+  const canNotifyFacilities = !FACILITIES_NOTIFY_EXCLUDED_AREA_IDS.has(sensor.areaId);
 
   const handleNotify = async () => {
     if (btnState !== "idle") return;
@@ -66,6 +78,7 @@ export function MonitoringSensorStatusRow({
 
             {isBreach && (
               <MonitoringSensorBreachActions
+                canNotify={canNotifyFacilities}
                 isForwarded={isForwarded}
                 isSending={isSending}
                 onNotify={handleNotify}
