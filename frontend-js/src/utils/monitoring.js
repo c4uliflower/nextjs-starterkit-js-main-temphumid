@@ -1,5 +1,4 @@
 ﻿import {
-  STATUS_CONFIG,
   STATUS_PRIORITY,
   getFloorStatus,
   getSensorStatus,
@@ -39,6 +38,7 @@ export function buildMonitoringTableData(floors) {
   return floors.flatMap((floor) =>
     floor.sensors.map((sensor) => ({
       id: `${floor.id}__${sensor.id}`,
+      areaId: sensor.areaId,
       floor: floor.label,
       name: sensor.name,
       temp: sensor.temp ?? null,
@@ -57,9 +57,7 @@ export function buildMonitoringTableData(floors) {
 export function buildMonitoringHeaderText(loading, breachFloorCount) {
   if (loading) return "Loading live data...";
 
-  return `Live status across all floors - ${breachFloorCount} floor${
-    breachFloorCount !== 1 ? "s" : ""
-  } in breach`;
+  return `Live status across all floors`;
 }
 
 export function hasMonitoringBreaches(floors) {
@@ -134,31 +132,6 @@ export const MONITORING_SENSOR_TABLE_COLUMNS = [
       row.original.humidLL != null && row.original.humidUL != null
         ? `${row.original.humidLL} \u2013 ${row.original.humidUL}`
         : "\u2014",
-  },
-  {
-    id: "status",
-    accessorFn: (row) => getSensorStatus(row),
-    header: "Status",
-    cell: ({ row }) => {
-      const status = getSensorStatus(row.original);
-      const config = STATUS_CONFIG[status];
-      return (
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            padding: "2px 8px",
-            borderRadius: 5,
-            background: config.color,
-            color: "#fff",
-            textTransform: "uppercase",
-            letterSpacing: ".04em",
-          }}
-        >
-          {config.label}
-        </span>
-      );
-    },
   },
   {
     accessorKey: "lastSeen",

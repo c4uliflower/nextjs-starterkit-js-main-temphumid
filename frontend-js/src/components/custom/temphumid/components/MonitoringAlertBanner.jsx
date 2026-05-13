@@ -20,15 +20,12 @@ function MonitoringAlertChip({ children }) {
   );
 }
 
-export function MonitoringAlertBanner({ delayedCount, hasBreaches }) {
-  if (!hasBreaches && delayedCount <= 0) return null;
+export function MonitoringAlertBanner({ delayedCount }) {
+  if (delayedCount <= 0) return null;
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      {delayedCount > 0 && (
-        <MonitoringAlertChip>{delayedCount} DELAYED</MonitoringAlertChip>
-      )}
-      {hasBreaches && <MonitoringAlertChip>ALARM ACTIVE</MonitoringAlertChip>}
+      <MonitoringAlertChip>{delayedCount} DELAYED</MonitoringAlertChip>
     </div>
   );
 }
