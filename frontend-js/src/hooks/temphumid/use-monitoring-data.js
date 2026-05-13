@@ -5,6 +5,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ALL_FLOORS, FLOOR_SLUG } from "@/utils/floors";
 import {
   fetchFacilitiesAlerts,
+  fetchDowntimeActive,
+  fetchRepairActive,
   fetchSensorStatusByFloor,
   processFacilitiesReadings,
 } from "@/features/temphumid/shared/utils/api";
@@ -25,7 +27,10 @@ import { getFloorStatus } from "@/features/temphumid/sensor-status/utils/status"
 let floorsCache = null;
 let statusCache = {};
 let statusCacheTime = 0;
+let facilitiesAlertsCache = [];
 let facilitiesAlertMapCache = new Map();
+let maintenanceAreaIdsCache = new Set();
+let repairAreaIdsCache = new Set();
 
 export function useMonitoringData() {
   const [floors, setFloors] = useState(floorsCache ?? ALL_FLOORS);
@@ -33,7 +38,15 @@ export function useMonitoringData() {
   const [loading, setLoading] = useState(
     !hasMonitoringLiveData(floorsCache ?? ALL_FLOORS)
   );
-  const [delayedCount, setDelayedCount] = useState(0);
+  const [delayedCount, setDelayedCount] = useState(() =>
+    getFacilitiesEscalatedCount(facilitiesAlertsCache)
+  );
+  const [maintenanceAreaIds, setMaintenanceAreaIds] = useState(
+    () => new Set(maintenanceAreaIdsCache)
+  );
+  const [repairAreaIds, setRepairAreaIds] = useState(
+    () => new Set(repairAreaIdsCache)
+  );
   const [facilitiesAlertMap, setFacilitiesAlertMap] = useState(
     () => new Map(facilitiesAlertMapCache)
   );
@@ -60,10 +73,45 @@ export function useMonitoringData() {
           duplicateCount: (current.duplicateCount ?? 1) + 1,
         });
       });
+      const nextDelayedCount = getFacilitiesEscalatedCount(alerts);
+      facilitiesAlertsCache = alerts;
       facilitiesAlertMapCache = next;
       setFacilitiesAlertMap(new Map(next));
-      setDelayedCount(getFacilitiesEscalatedCount(alerts));
+      setDelayedCount(nextDelayedCount);
+      return alerts;
     } catch {
+      // Non-critical; preserve current state if sync fails.
+      return facilitiesAlertsCache;
+    }
+  }, []);
+
+  const syncOngoingWork = useCallback(async (signal, activeAlerts = []) => {
+    try {
+      const [activeMaintenance, activeRepairs] = await Promise.all([
+        fetchDowntimeActive({ signal }),
+        fetchRepairActive({ signal }),
+      ]);
+      const alertAreaById = new Map(
+        activeAlerts.map((alert) => [Number(alert.id), alert.areaId])
+      );
+      const nextMaintenanceAreaIds = new Set();
+      const nextRepairAreaIds = new Set();
+
+      activeMaintenance.forEach((record) => {
+        if (record.area_id) nextMaintenanceAreaIds.add(record.area_id);
+      });
+
+      activeRepairs.forEach((record) => {
+        const areaId = alertAreaById.get(Number(record.source_alert_id));
+        if (areaId) nextRepairAreaIds.add(areaId);
+      });
+
+      maintenanceAreaIdsCache = nextMaintenanceAreaIds;
+      repairAreaIdsCache = nextRepairAreaIds;
+      setMaintenanceAreaIds(new Set(nextMaintenanceAreaIds));
+      setRepairAreaIds(new Set(nextRepairAreaIds));
+    } catch (error) {
+      if (error?.name === "CanceledError" || error?.code === "ERR_CANCELED") return;
       // Non-critical; preserve current state if sync fails.
     }
   }, []);
@@ -92,7 +140,8 @@ export function useMonitoringData() {
         floorsCache = null;
       }
 
-      await syncFacilitiesAlerts(signal);
+      const activeAlerts = await syncFacilitiesAlerts(signal);
+      await syncOngoingWork(signal, activeAlerts);
 
       const results = await Promise.all(
         ALL_FLOORS.map((floor) =>
@@ -163,15 +212,17 @@ export function useMonitoringData() {
     } catch (error) {
       console.error("Failed to fetch monitoring data:", error);
     }
-  }, [syncFacilitiesAlerts]);
+  }, [syncFacilitiesAlerts, syncOngoingWork]);
 
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
-      void syncFacilitiesAlerts();
+      void syncFacilitiesAlerts().then((activeAlerts) =>
+        syncOngoingWork(undefined, activeAlerts)
+      );
     }, 0);
 
     return () => window.clearTimeout(timeoutId);
-  }, [syncFacilitiesAlerts]);
+  }, [syncFacilitiesAlerts, syncOngoingWork]);
 
   useEffect(() => {
     const handleStorage = (event) => {
@@ -179,13 +230,13 @@ export function useMonitoringData() {
         event.key === "facilitiesAlertSent" ||
         event.key === "facilitiesAlertResolved"
       ) {
-        syncFacilitiesAlerts();
+        syncFacilitiesAlerts().then((activeAlerts) => syncOngoingWork(undefined, activeAlerts));
       }
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        syncFacilitiesAlerts();
+        syncFacilitiesAlerts().then((activeAlerts) => syncOngoingWork(undefined, activeAlerts));
       }
     };
 
@@ -196,7 +247,7 @@ export function useMonitoringData() {
       window.removeEventListener("storage", handleStorage);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [syncFacilitiesAlerts]);
+  }, [syncFacilitiesAlerts, syncOngoingWork]);
 
   useEffect(() => {
     fetchAllFloors();
@@ -211,6 +262,26 @@ export function useMonitoringData() {
   const breachFloorCount = floors.filter(
     (floor) => getFloorStatus(floor) === "breach"
   ).length;
+  const ongoingAreaIds = new Set([...maintenanceAreaIds, ...repairAreaIds]);
+  const sensorStats = floors.reduce(
+    (stats, floor) => {
+      floor.sensors.forEach((sensor) => {
+        stats.total += 1;
+        if (sensor.breach) {
+          stats.breach += 1;
+          return;
+        }
+        if (!sensor.hasData) {
+          stats.noData += 1;
+          return;
+        }
+        if (sensor.hasData && !ongoingAreaIds.has(sensor.areaId)) stats.stable += 1;
+      });
+
+      return stats;
+    },
+    { total: 0, stable: 0, noData: 0, breach: 0 }
+  );
 
   const markAreaForwarded = (areaId) => {
     const current = facilitiesAlertMapCache.get(areaId);
@@ -232,6 +303,14 @@ export function useMonitoringData() {
     floors,
     loading,
     markAreaForwarded,
+    monitoringStats: {
+      ...sensorStats,
+      maintenance: maintenanceAreaIds.size,
+      repair: repairAreaIds.size,
+      ongoingAreaIds,
+      maintenanceAreaIds,
+      repairAreaIds,
+    },
     refresh: fetchAllFloors,
     setActiveFloor,
     tableData,

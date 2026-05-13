@@ -1,7 +1,11 @@
 ﻿"use client";
 
+import { useMemo, useState } from "react";
+
 import { CardSkeleton } from "@/components/custom/CardSkeleton";
+import { DashboardCard } from "@/components/custom/DashboardCard";
 import { DataTable } from "@/components/custom/DataTable";
+import { Activity, Hammer, Radio, TriangleAlert, WifiOff, Wrench } from "lucide-react";
 
 import { MonitoringAlertBanner } from "@/components/custom/temphumid/components/MonitoringAlertBanner";
 // DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this import before shipping.
@@ -14,9 +18,17 @@ import {
   MONITORING_GLOBAL_STYLES,
   MONITORING_SENSOR_TABLE_COLUMNS,
   buildMonitoringHeaderText,
-  hasMonitoringBreaches,
 } from "@/utils/monitoring";
 import { ALL_FLOORS } from "@/utils/floors";
+
+const ACTIVITY_FILTER_LABELS = {
+  total: "Active",
+  stable: "Stable",
+  maintenance: "Maintenance Ongoing",
+  repair: "Repair Ongoing",
+  noData: "No Data",
+  breach: "Breaching",
+};
 
 export default function MonitoringView({ currentUser = null }) {
   const {
@@ -28,11 +40,48 @@ export default function MonitoringView({ currentUser = null }) {
     loading,
     markAreaForwarded,
     refresh,
+    monitoringStats,
     setActiveFloor,
     tableData,
   } = useMonitoringData();
 
-  const hasBreaches = hasMonitoringBreaches(floors);
+  const [activityFilter, setActivityFilter] = useState("total");
+  const filteredTableData = useMemo(() => {
+    const ongoingAreaIds = monitoringStats.ongoingAreaIds ?? new Set();
+    const maintenanceAreaIds = monitoringStats.maintenanceAreaIds ?? new Set();
+    const repairAreaIds = monitoringStats.repairAreaIds ?? new Set();
+
+    if (activityFilter === "stable") {
+      return tableData.filter(
+        (sensor) => sensor.hasData && !sensor.breach && !ongoingAreaIds.has(sensor.areaId)
+      );
+    }
+
+    if (activityFilter === "maintenance") {
+      return tableData.filter((sensor) => maintenanceAreaIds.has(sensor.areaId));
+    }
+
+    if (activityFilter === "repair") {
+      return tableData.filter((sensor) => repairAreaIds.has(sensor.areaId));
+    }
+
+    if (activityFilter === "noData") {
+      return tableData.filter((sensor) => !sensor.hasData);
+    }
+
+    if (activityFilter === "breach") {
+      return tableData.filter((sensor) => sensor.breach);
+    }
+
+    return tableData;
+  }, [
+    activityFilter,
+    monitoringStats.maintenanceAreaIds,
+    monitoringStats.ongoingAreaIds,
+    monitoringStats.repairAreaIds,
+    tableData,
+  ]);
+  const activeFilterLabel = ACTIVITY_FILTER_LABELS[activityFilter];
 
   return (
     <>
@@ -60,7 +109,7 @@ export default function MonitoringView({ currentUser = null }) {
             </p>
           </div>
           {!loading && (
-            <MonitoringAlertBanner delayedCount={delayedCount} hasBreaches={hasBreaches} />
+            <MonitoringAlertBanner delayedCount={delayedCount} />
           )}
         </div>
 
@@ -75,6 +124,51 @@ export default function MonitoringView({ currentUser = null }) {
             gap: 28,
           }}
         >
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            <DashboardCard
+              value={String(monitoringStats.total)}
+              label="Active"
+              icon={Activity}
+              variant="primary"
+              onFilterClick={() => setActivityFilter("total")}
+            />
+            <DashboardCard
+              value={String(monitoringStats.stable)}
+              label="Stable"
+              icon={Radio}
+              variant="success"
+              onFilterClick={() => setActivityFilter("stable")}
+            />
+            <DashboardCard
+              value={String(monitoringStats.maintenance)}
+              label="Maintenance Ongoing"
+              icon={Wrench}
+              variant="warning"
+              onFilterClick={() => setActivityFilter("maintenance")}
+            />
+            <DashboardCard
+              value={String(monitoringStats.repair)}
+              label="Repair Ongoing"
+              icon={Hammer}
+              variant="info"
+              onFilterClick={() => setActivityFilter("repair")}
+            />
+            <DashboardCard
+              value={String(monitoringStats.noData)}
+              label="No Data"
+              icon={WifiOff}
+              variant="secondary"
+              onFilterClick={() => setActivityFilter("noData")}
+            />
+            <DashboardCard
+              value={String(monitoringStats.breach)}
+              label="Breaching"
+              icon={TriangleAlert}
+              variant="destructive"
+              onFilterClick={() => setActivityFilter("breach")}
+            />
+          </div>
+
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 20 }}>
             {loading
               ? Array.from({ length: ALL_FLOORS.length }).map((_, index) => (
@@ -99,16 +193,21 @@ export default function MonitoringView({ currentUser = null }) {
               padding: "20px 24px",
             }}
           >
-            <p className="mb-4 font-bold">Activity Log</p>
-            {tableData.length === 0 ? (
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <p className="font-bold">Activity Log</p>
+              <span className="rounded-md bg-muted px-2.5 py-1 text-xs font-semibold text-muted-foreground">
+                {activeFilterLabel}
+              </span>
+            </div>
+            {filteredTableData.length === 0 ? (
               <p
                 className="text-center text-sm text-muted-foreground"
                 style={{ padding: "24px 0" }}
               >
-                No sensor data available.
+                No sensor data available for this filter.
               </p>
             ) : (
-              <DataTable columns={MONITORING_SENSOR_TABLE_COLUMNS} data={tableData} />
+              <DataTable columns={MONITORING_SENSOR_TABLE_COLUMNS} data={filteredTableData} />
             )}
           </div>
         </div>
