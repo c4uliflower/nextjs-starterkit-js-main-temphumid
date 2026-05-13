@@ -85,6 +85,16 @@ export async function processFacilitiesReadings() {
   return response.data?.data ?? [];
 }
 
+// DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this API helper before shipping.
+export async function simulateDevSensorReading(payload) {
+  const response = await axios.post(`${API_BASE}/dev/simulate-reading`, {
+    processAlerts: true,
+    ...payload,
+  });
+
+  return response.data?.data ?? null;
+}
+
 export async function fetchFacilitiesBreachEvents(alertId, page = 1) {
   const response = await axios.get(`${API_BASE}/facilities/alerts/${alertId}/breach-events`, {
     params: { page },

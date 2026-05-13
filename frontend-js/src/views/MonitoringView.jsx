@@ -4,6 +4,8 @@ import { CardSkeleton } from "@/components/custom/CardSkeleton";
 import { DataTable } from "@/components/custom/DataTable";
 
 import { MonitoringAlertBanner } from "@/components/custom/temphumid/components/MonitoringAlertBanner";
+// DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this import before shipping.
+import { DevReadingSimulator } from "@/components/custom/temphumid/components/DevReadingSimulator";
 import { MonitoringFloorCard } from "@/components/custom/temphumid/components/MonitoringFloorCard";
 import { MonitoringFloorModal } from "@/components/custom/temphumid/components/MonitoringFloorModal";
 import { useMonitoringData } from "@/hooks/temphumid/use-monitoring-data";
@@ -25,6 +27,7 @@ export default function MonitoringView({ currentUser = null }) {
     floors,
     loading,
     markAreaForwarded,
+    refresh,
     setActiveFloor,
     tableData,
   } = useMonitoringData();
@@ -60,6 +63,9 @@ export default function MonitoringView({ currentUser = null }) {
             <MonitoringAlertBanner delayedCount={delayedCount} hasBreaches={hasBreaches} />
           )}
         </div>
+
+        {/* DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this component before shipping. */}
+        <DevReadingSimulator floors={floors} onSimulated={refresh} />
 
         <div
           style={{

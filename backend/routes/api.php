@@ -6,6 +6,8 @@ use App\Http\Controllers\AccessControl\RoleManagementController;
 use App\Http\Controllers\AccessControl\UserAccessController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\TempHumid\BreachEventController;
+// DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this controller import before shipping.
+use App\Http\Controllers\TempHumid\DevReadingSimulationController;
 use App\Http\Controllers\TempHumid\FacilitiesAlertController;
 use App\Http\Controllers\TempHumid\DowntimeController;
 use App\Http\Controllers\TempHumid\RepairController;
@@ -46,9 +48,14 @@ Route::middleware(['auth:mat-auth'])->group(function () {
             Route::post('/rules', [RoleAssignmentRuleController::class, 'store']);
             Route::put('/rules/{ruleId}', [RoleAssignmentRuleController::class, 'update']);
             Route::delete('/rules/{ruleId}', [RoleAssignmentRuleController::class, 'destroy']);
-        });
+    });
 
     Route::prefix('temphumid')->group(function (): void {
+        // DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this local simulation route before shipping.
+        if (app()->environment('local')) {
+            Route::post('/dev/simulate-reading', [DevReadingSimulationController::class, 'store']);
+        }
+
         Route::get('/sensors/readings/history/batch',    [SensorReadingController::class, 'batchHistory']);
         Route::get('/sensors/readings/export',           [SensorReadingController::class, 'exportRaw']);
         Route::get('/sensors',                           [SensorController::class, 'index']);
