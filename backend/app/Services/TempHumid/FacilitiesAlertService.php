@@ -512,7 +512,7 @@ class FacilitiesAlertService
     public function verify(Request $request, int $id): JsonResponse
     {
         $validated = $request->validate([
-            'actionType' => ['required', 'string', 'in:adjust_temp,adjust_humid,maintenance,repair,others'],
+            'actionType' => ['required', 'string', 'in:adjust_temp,adjust_humid,both,maintenance,repair,others'],
             'actionRemarks' => ['nullable', 'string', 'max:1000'],
         ]);
 
