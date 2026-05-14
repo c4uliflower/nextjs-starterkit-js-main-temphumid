@@ -210,6 +210,26 @@ it('requires remarks when verifying with the others action type', function (): v
         ->and($response->getData(true)['errors'])->toHaveKey('actionRemarks');
 });
 
+it('allows verifying with the both action type', function (): void {
+    $alertId = openFacilitiesAlert();
+    insertFacilitiesSensor();
+    insertFacilitiesReading('0xAAA', '2026-05-13 09:00:00', 35, 80);
+
+    $response = facilitiesService()->verify(facilitiesRequest([
+        'actionType' => 'both',
+        'actionRemarks' => 'Adjusted temperature and humidity',
+    ]), $alertId);
+
+    $action = DB::connection('temphumid')
+        ->table('TempHumid_Facilities_Action_Log')
+        ->where('alert_id', $alertId)
+        ->first();
+
+    expect($response->getStatusCode())->toBe(200)
+        ->and(facilitiesAlertRow($alertId)->notif_status)->toBe('verifying')
+        ->and($action->action_type)->toBe('both');
+});
+
 it('requires maintenance and repair alerts to be scheduled before that verify path', function (): void {
     $alertId = openFacilitiesAlert();
 
