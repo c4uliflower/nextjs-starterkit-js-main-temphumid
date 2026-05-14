@@ -5,12 +5,14 @@ import { minutesSince } from "@/utils/time";
 export const ACTION_OPTIONS = [
   { value: "adjust_temp", label: "Adjust temperature" },
   { value: "adjust_humid", label: "Adjust humidity" },
+  { value: "both", label: "Both" },
   { value: "others", label: "Others" },
 ];
 
 export const ACTION_LABELS = {
   adjust_temp: "Adjust temperature",
   adjust_humid: "Adjust humidity",
+  both: "Both",
   maintenance: "Scheduled for maintenance",
   repair: "Queued for repair",
   others: "Others",
