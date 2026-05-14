@@ -5,9 +5,16 @@ import { useState } from "react";
 import { StatusDot } from "@/features/temphumid/sensor-status/components/MonitoringStatusDots";
 import { STATUS_CONFIG } from "@/features/temphumid/sensor-status/utils/status";
 
-export function MonitoringExpandableStatusCard({ index, sensorName, status, body }) {
+export function MonitoringExpandableStatusCard({
+  index,
+  sensorName,
+  status,
+  statusLabels,
+  body,
+}) {
   const config = STATUS_CONFIG[status];
   const [open, setOpen] = useState(false);
+  const labels = statusLabels?.length ? statusLabels : [config.label];
 
   return (
     <div
@@ -39,20 +46,25 @@ export function MonitoringExpandableStatusCard({ index, sensorName, status, body
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span
-            style={{
-              fontSize: 10,
-              fontWeight: 700,
-              padding: "2px 7px",
-              borderRadius: 5,
-              background: config.color,
-              color: "#fff",
-              letterSpacing: ".04em",
-              textTransform: "uppercase",
-            }}
-          >
-            {config.label}
-          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "flex-end", gap: 4 }}>
+            {labels.map((label) => (
+              <span
+                key={label}
+                style={{
+                  fontSize: 10,
+                  fontWeight: 700,
+                  padding: "2px 7px",
+                  borderRadius: 5,
+                  background: config.color,
+                  color: "#fff",
+                  letterSpacing: ".04em",
+                  textTransform: "uppercase",
+                }}
+              >
+                {label}
+              </span>
+            ))}
+          </div>
           <span
             style={{
               fontSize: 16,

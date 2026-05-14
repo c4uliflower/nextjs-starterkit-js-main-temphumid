@@ -14,7 +14,7 @@ export const STATUS_PRIORITY = {
 };
 
 export const STATUS_CONFIG = {
-  breach: { color: "#dc3545", bg: "#ffe8e8", label: "Breach", dot: "#dc3545" },
+  breach: { color: "#dc3545", bg: "#ffe8e8", label: "Out of Spec", dot: "#dc3545" },
   no_data: { color: "#6c757d", bg: "#f1f3f5", label: "No Data", dot: "#adb5bd" },
   active: { color: "#198754", bg: "#e8fff8", label: "Active", dot: "#00c9a7" },
 };
@@ -45,7 +45,7 @@ export function getFloorSummary(floor) {
   const noData = floor.sensors.filter((sensor) => getSensorStatus(sensor) === "no_data").length;
   const parts = [];
 
-  if (breached > 0) parts.push(`${breached} in breach`);
+  if (breached > 0) parts.push(`${breached} out of spec`);
   if (noData > 0) parts.push(`${noData} no data`);
 
   return parts.length ? parts.join(" · ") : "All stable";

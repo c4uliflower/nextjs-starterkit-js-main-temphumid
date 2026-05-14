@@ -108,7 +108,7 @@ export function FacilitiesBreachReadingsTable({ rows, compact }) {
       >
         <thead>
           <tr style={{ borderBottom: "1px solid var(--border)" }}>
-            {["Time", "Temp (\u00B0C)", "Humid (%)", "Temp Limit", "Humid Limit", "Breached"].map(
+            {["Time", "Temp (\u00B0C)", "Humid (%)", "Temp Limit", "Humid Limit", "Out of Spec"].map(
               (header) => (
                 <th
                   key={header}

@@ -5,8 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { ALL_FLOORS, FLOOR_SLUG } from "@/utils/floors";
 import {
   fetchFacilitiesAlerts,
-  fetchDowntimeActive,
-  fetchRepairActive,
   fetchSensorStatusByFloor,
   processFacilitiesReadings,
 } from "@/features/temphumid/shared/utils/api";
@@ -19,6 +17,7 @@ import {
   MONITORING_STATUS_CACHE_TTL_MS,
   buildMonitoringTableData,
   hasMonitoringLiveData,
+  isValueOutOfSpec,
 } from "@/utils/monitoring";
 import { getFloorStatus } from "@/features/temphumid/sensor-status/utils/status";
 
@@ -85,35 +84,26 @@ export function useMonitoringData() {
     }
   }, []);
 
-  const syncOngoingWork = useCallback(async (signal, activeAlerts = []) => {
-    try {
-      const [activeMaintenance, activeRepairs] = await Promise.all([
-        fetchDowntimeActive({ signal }),
-        fetchRepairActive({ signal }),
-      ]);
-      const alertAreaById = new Map(
-        activeAlerts.map((alert) => [Number(alert.id), alert.areaId])
-      );
-      const nextMaintenanceAreaIds = new Set();
-      const nextRepairAreaIds = new Set();
+  const syncOngoingWork = useCallback((activeAlerts = []) => {
+    const nextMaintenanceAreaIds = new Set();
+    const nextRepairAreaIds = new Set();
 
-      activeMaintenance.forEach((record) => {
-        if (record.area_id) nextMaintenanceAreaIds.add(record.area_id);
-      });
+    activeAlerts.forEach((alert) => {
+      if (!["open", "verifying"].includes(alert.status) || !alert.areaId) return;
 
-      activeRepairs.forEach((record) => {
-        const areaId = alertAreaById.get(Number(record.source_alert_id));
-        if (areaId) nextRepairAreaIds.add(areaId);
-      });
+      if (alert.actionType === "maintenance") {
+        nextMaintenanceAreaIds.add(alert.areaId);
+      }
 
-      maintenanceAreaIdsCache = nextMaintenanceAreaIds;
-      repairAreaIdsCache = nextRepairAreaIds;
-      setMaintenanceAreaIds(new Set(nextMaintenanceAreaIds));
-      setRepairAreaIds(new Set(nextRepairAreaIds));
-    } catch (error) {
-      if (error?.name === "CanceledError" || error?.code === "ERR_CANCELED") return;
-      // Non-critical; preserve current state if sync fails.
-    }
+      if (alert.actionType === "repair") {
+        nextRepairAreaIds.add(alert.areaId);
+      }
+    });
+
+    maintenanceAreaIdsCache = nextMaintenanceAreaIds;
+    repairAreaIdsCache = nextRepairAreaIds;
+    setMaintenanceAreaIds(new Set(nextMaintenanceAreaIds));
+    setRepairAreaIds(new Set(nextRepairAreaIds));
   }, []);
 
   const fetchAllFloors = useCallback(async () => {
@@ -141,7 +131,7 @@ export function useMonitoringData() {
       }
 
       const activeAlerts = await syncFacilitiesAlerts(signal);
-      await syncOngoingWork(signal, activeAlerts);
+      syncOngoingWork(activeAlerts);
 
       const results = await Promise.all(
         ALL_FLOORS.map((floor) =>
@@ -217,7 +207,7 @@ export function useMonitoringData() {
   useEffect(() => {
     const timeoutId = window.setTimeout(() => {
       void syncFacilitiesAlerts().then((activeAlerts) =>
-        syncOngoingWork(undefined, activeAlerts)
+        syncOngoingWork(activeAlerts)
       );
     }, 0);
 
@@ -230,13 +220,13 @@ export function useMonitoringData() {
         event.key === "facilitiesAlertSent" ||
         event.key === "facilitiesAlertResolved"
       ) {
-        syncFacilitiesAlerts().then((activeAlerts) => syncOngoingWork(undefined, activeAlerts));
+        syncFacilitiesAlerts().then((activeAlerts) => syncOngoingWork(activeAlerts));
       }
     };
 
     const handleVisibility = () => {
       if (document.visibilityState === "visible") {
-        syncFacilitiesAlerts().then((activeAlerts) => syncOngoingWork(undefined, activeAlerts));
+        syncFacilitiesAlerts().then((activeAlerts) => syncOngoingWork(activeAlerts));
       }
     };
 
@@ -267,6 +257,12 @@ export function useMonitoringData() {
     (stats, floor) => {
       floor.sensors.forEach((sensor) => {
         stats.total += 1;
+        const tempOutOfSpec = isValueOutOfSpec(sensor.temp, sensor.tempLL, sensor.tempUL);
+        const humidOutOfSpec = isValueOutOfSpec(sensor.humid, sensor.humidLL, sensor.humidUL);
+
+        if (tempOutOfSpec) stats.tempOutOfSpec += 1;
+        if (humidOutOfSpec) stats.humidOutOfSpec += 1;
+
         if (sensor.breach) {
           stats.breach += 1;
           return;
@@ -280,14 +276,15 @@ export function useMonitoringData() {
 
       return stats;
     },
-    { total: 0, stable: 0, noData: 0, breach: 0 }
+    { total: 0, stable: 0, noData: 0, breach: 0, tempOutOfSpec: 0, humidOutOfSpec: 0 }
   );
 
-  const markAreaForwarded = (areaId) => {
+  const markAreaForwarded = (areaId, alert = null) => {
     const current = facilitiesAlertMapCache.get(areaId);
     const next = new Map(facilitiesAlertMapCache);
     next.set(areaId, {
       ...current,
+      ...alert,
       areaId,
       canNotifyAgain: false,
     });
