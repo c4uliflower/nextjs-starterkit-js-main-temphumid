@@ -8,6 +8,7 @@ import {
 } from "@/features/temphumid/sensor-status/components/MonitoringSensorStatusParts";
 import { createFacilitiesAlert } from "@/features/temphumid/shared/utils/api";
 import { formatTimer, parseUTC } from "@/utils/time";
+import { getOutOfSpecReadingLabels } from "@/utils/monitoring";
 import { STATUS_CONFIG, getSensorStatus } from "@/features/temphumid/sensor-status/utils/status";
 
 // Copied from the current temp/humid monitoring route page as an additive scaffold.
@@ -37,13 +38,14 @@ export function MonitoringSensorStatusRow({
   const isForwarded = btnState === "forwarded";
   const isSending = btnState === "sending";
   const canNotifyFacilities = !FACILITIES_NOTIFY_EXCLUDED_AREA_IDS.has(sensor.areaId);
+  const statusLabels = isBreach ? getOutOfSpecReadingLabels(sensor) : undefined;
 
   const handleNotify = async () => {
     if (btnState !== "idle") return;
     onNotifyStateChange(sensor.areaId, "sending");
 
     try {
-      await createFacilitiesAlert({
+      const createdAlert = await createFacilitiesAlert({
         areaId: sensor.areaId,
         lineName: sensor.name,
         temperature: sensor.temp,
@@ -54,12 +56,18 @@ export function MonitoringSensorStatusRow({
         humidLL: sensor.humidLL,
       });
 
-      onForwarded(sensor.areaId);
+      onForwarded(sensor.areaId, createdAlert);
       onNotifyStateChange(sensor.areaId, "forwarded");
 
       try {
+        if (createdAlert) {
+          localStorage.setItem("facilitiesAlertSentPayload", JSON.stringify(createdAlert));
+        }
         localStorage.setItem("facilitiesAlertSent", String(Date.now()));
       } catch {}
+      window.dispatchEvent(
+        new CustomEvent("facilitiesAlertSent", { detail: createdAlert })
+      );
     } catch (error) {
       console.error("Notify Facilities failed:", error);
       onNotifyStateChange(sensor.areaId, "idle");
@@ -71,6 +79,7 @@ export function MonitoringSensorStatusRow({
       index={index}
       sensorName={sensor.name}
       status={status}
+      statusLabels={statusLabels}
       body={
         sensor.hasData ? (
           <>

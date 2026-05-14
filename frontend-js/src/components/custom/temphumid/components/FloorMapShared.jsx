@@ -204,7 +204,7 @@ export function SensorListItem({ sensor, selected, onToggle }) {
 
 export const FLOOR_MAP_LEGEND = [
   { color: STATUS_STYLES.ok.dot, label: "Within limits" },
-  { color: STATUS_STYLES.breach.dot, label: "Limit breached" },
+  { color: STATUS_STYLES.breach.dot, label: "Exceeded limits" },
   { color: STATUS_STYLES["no-data"].dot, label: "No data" },
 ];
 

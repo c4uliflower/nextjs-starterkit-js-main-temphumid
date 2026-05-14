@@ -10,7 +10,9 @@ function MonitoringAlertChip({ children }) {
         background: "#ffe8e8",
         border: "1.5px solid #dc3545",
         borderRadius: 5,
-        padding: "14px 24px",
+        minWidth: 220,
+        justifyContent: "center",
+        padding: "14px 32px",
         animation: "borderBlink 1.4s ease-in-out infinite",
       }}
     >
@@ -25,7 +27,7 @@ export function MonitoringAlertBanner({ delayedCount }) {
 
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <MonitoringAlertChip>{delayedCount} DELAYED</MonitoringAlertChip>
+      <MonitoringAlertChip>{delayedCount} ESCALATED</MonitoringAlertChip>
     </div>
   );
 }

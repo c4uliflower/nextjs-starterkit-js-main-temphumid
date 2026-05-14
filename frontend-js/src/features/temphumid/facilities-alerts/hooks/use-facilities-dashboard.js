@@ -20,6 +20,28 @@ import { minutesSince, parseUTC } from "@/utils/time";
 
 let alertsCache = null;
 
+function readSentAlertPayload() {
+  try {
+    const raw = localStorage.getItem("facilitiesAlertSentPayload");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function mergeAlert(alerts, incomingAlert) {
+  if (!incomingAlert?.id) return alerts;
+
+  const exists = alerts.some((alert) => alert.id === incomingAlert.id);
+  if (exists) {
+    return alerts.map((alert) =>
+      alert.id === incomingAlert.id ? { ...alert, ...incomingAlert } : alert
+    );
+  }
+
+  return [incomingAlert, ...alerts];
+}
+
 export function useFacilitiesDashboard() {
   const [alerts, setAlerts] = useState(alertsCache || []);
   const [loading, setLoading] = useState(alertsCache === null);
@@ -80,11 +102,28 @@ export function useFacilitiesDashboard() {
     }
   }, [processReadings, processVerifyingAlerts]);
 
+  const applyIncomingAlert = useCallback((incomingAlert) => {
+    if (!incomingAlert?.id) return false;
+
+    setAlerts((previous) => {
+      const next = mergeAlert(previous, incomingAlert);
+      alertsCache = mergeAlert(alertsCache ?? [], incomingAlert);
+      return next;
+    });
+    setLoading(false);
+    setFetchError(null);
+    try {
+      localStorage.removeItem("facilitiesAlertSentPayload");
+    } catch {}
+    return true;
+  }, []);
+
   useEffect(() => {
     if (alertsCache !== null) setLoading(false);
     else setLoading(true);
+    applyIncomingAlert(readSentAlertPayload());
     fetchAlerts();
-  }, [fetchAlerts]);
+  }, [applyIncomingAlert, fetchAlerts]);
 
   useEffect(() => {
     const interval = setInterval(fetchAlerts, 30_000);
@@ -94,7 +133,15 @@ export function useFacilitiesDashboard() {
   useEffect(() => {
     const handleStorage = (event) => {
       if (event.key === "facilitiesAlertSent") {
-        alertsCache = null;
+        const incomingAlert = readSentAlertPayload();
+        if (!applyIncomingAlert(incomingAlert)) {
+          alertsCache = null;
+          fetchAlerts();
+        }
+      }
+    };
+    const handleAlertSent = (event) => {
+      if (!applyIncomingAlert(event.detail)) {
         fetchAlerts();
       }
     };
@@ -116,12 +163,14 @@ export function useFacilitiesDashboard() {
     };
 
     window.addEventListener("storage", handleStorage);
+    window.addEventListener("facilitiesAlertSent", handleAlertSent);
     document.addEventListener("visibilitychange", handleVisibility);
     return () => {
       window.removeEventListener("storage", handleStorage);
+      window.removeEventListener("facilitiesAlertSent", handleAlertSent);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [fetchAlerts]);
+  }, [applyIncomingAlert, fetchAlerts]);
 
   const acknowledgedAlerts = useMemo(
     () =>
@@ -169,33 +218,41 @@ export function useFacilitiesDashboard() {
     [acknowledgedAlerts.length, escalatedCount, openAlerts.length, resolvedAlerts.length]
   );
 
-  const handleAcknowledge = useCallback(() => fetchAlerts(), [fetchAlerts]);
+  const applyUpdatedAlert = useCallback((updatedAlert) => {
+    if (!updatedAlert) return;
+
+    setAlerts((previous) => {
+      const next = previous.map((alert) =>
+        alert.id === updatedAlert.id
+          ? {
+              ...alert,
+              ...updatedAlert,
+              maintenanceOngoing: alert.maintenanceOngoing,
+              maintenanceStartedAt: alert.maintenanceStartedAt,
+            }
+          : alert
+      );
+      alertsCache = next;
+      return next;
+    });
+  }, []);
+
+  const handleAcknowledge = useCallback(
+    (updatedAlert) => {
+      applyUpdatedAlert(updatedAlert);
+    },
+    [applyUpdatedAlert]
+  );
   const handleResolve = useCallback(
     (updatedAlert) => {
-      setAlerts((previous) => {
-        const next = previous.map((alert) =>
-          alert.id === updatedAlert.id
-            ? {
-                ...alert,
-                ...updatedAlert,
-                maintenanceOngoing: alert.maintenanceOngoing,
-                maintenanceStartedAt: alert.maintenanceStartedAt,
-              }
-            : alert
-        );
-        alertsCache = next;
-        return next;
-      });
-
+      applyUpdatedAlert(updatedAlert);
       if (updatedAlert.status === "resolved") {
         try {
           localStorage.setItem("facilitiesAlertResolved", String(Date.now()));
         } catch {}
       }
-
-      fetchAlerts();
     },
-    [fetchAlerts]
+    [applyUpdatedAlert]
   );
   const handleConflict = useCallback(() => fetchAlerts(), [fetchAlerts]);
 

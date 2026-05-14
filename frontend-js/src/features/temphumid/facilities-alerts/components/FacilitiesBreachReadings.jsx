@@ -61,7 +61,7 @@ export function FacilitiesBreachReadingsPanel({ alertId, compact = false }) {
         <div style={{ marginTop: 8 }}>
           <FacilitiesBreachReadingsContent
             compact={compact}
-            emptyMessage="No breach readings recorded after this alert was acknowledged."
+            emptyMessage="No out-of-spec readings recorded after this alert was acknowledged."
             error={error}
             loading={loading}
             meta={meta}
@@ -97,7 +97,7 @@ export function FacilitiesResolvedDetailContent({ alert }) {
             margin: "0 0 10px",
           }}
         >
-          Breach History
+          Out-of-Spec History
         </p>
         <FacilitiesBreachReadingsInline alertId={alert.id} />
       </div>
@@ -111,7 +111,7 @@ function FacilitiesBreachReadingsInline({ alertId }) {
   return (
     <FacilitiesBreachReadingsContent
       compact={false}
-      emptyMessage="No breach readings recorded after this alert was acknowledged."
+      emptyMessage="No out-of-spec readings recorded after this alert was acknowledged."
       error={error}
       loading={loading}
       meta={meta}

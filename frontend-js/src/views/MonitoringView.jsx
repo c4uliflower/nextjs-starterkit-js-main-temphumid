@@ -5,7 +5,7 @@ import { useMemo, useState } from "react";
 import { CardSkeleton } from "@/components/custom/CardSkeleton";
 import { DashboardCard } from "@/components/custom/DashboardCard";
 import { DataTable } from "@/components/custom/DataTable";
-import { Activity, Hammer, Radio, TriangleAlert, WifiOff, Wrench } from "lucide-react";
+import { Activity, Droplets, Hammer, Radio, Thermometer, Wrench } from "lucide-react";
 
 import { MonitoringAlertBanner } from "@/components/custom/temphumid/components/MonitoringAlertBanner";
 import { MonitoringFloorCard } from "@/components/custom/temphumid/components/MonitoringFloorCard";
@@ -22,10 +22,10 @@ import { ALL_FLOORS } from "@/utils/floors";
 const ACTIVITY_FILTER_LABELS = {
   total: "Active",
   stable: "Stable",
-  maintenance: "Maintenance Ongoing",
-  repair: "Repair Ongoing",
-  noData: "No Data",
-  breach: "Breaching",
+  maintenance: "On Maintenance",
+  repair: "In Repair",
+  humidOutOfSpec: "Out of Spec Humidity",
+  tempOutOfSpec: "Out of Spec Temperature",
 };
 
 export default function MonitoringView({ currentUser = null }) {
@@ -62,12 +62,12 @@ export default function MonitoringView({ currentUser = null }) {
       return tableData.filter((sensor) => repairAreaIds.has(sensor.areaId));
     }
 
-    if (activityFilter === "noData") {
-      return tableData.filter((sensor) => !sensor.hasData);
+    if (activityFilter === "humidOutOfSpec") {
+      return tableData.filter((sensor) => sensor.humidOutOfSpec);
     }
 
-    if (activityFilter === "breach") {
-      return tableData.filter((sensor) => sensor.breach);
+    if (activityFilter === "tempOutOfSpec") {
+      return tableData.filter((sensor) => sensor.tempOutOfSpec);
     }
 
     return tableData;
@@ -135,31 +135,31 @@ export default function MonitoringView({ currentUser = null }) {
             />
             <DashboardCard
               value={String(monitoringStats.maintenance)}
-              label="Maintenance Ongoing"
+              label="On Maintenance"
               icon={Wrench}
               variant="warning"
               onFilterClick={() => setActivityFilter("maintenance")}
             />
             <DashboardCard
               value={String(monitoringStats.repair)}
-              label="Repair Ongoing"
+              label="In Repair"
               icon={Hammer}
               variant="info"
               onFilterClick={() => setActivityFilter("repair")}
             />
             <DashboardCard
-              value={String(monitoringStats.noData)}
-              label="No Data"
-              icon={WifiOff}
+              value={String(monitoringStats.humidOutOfSpec)}
+              label="Humidity Out of Spec"
+              icon={Droplets}
               variant="secondary"
-              onFilterClick={() => setActivityFilter("noData")}
+              onFilterClick={() => setActivityFilter("humidOutOfSpec")}
             />
             <DashboardCard
-              value={String(monitoringStats.breach)}
-              label="Breaching"
-              icon={TriangleAlert}
+              value={String(monitoringStats.tempOutOfSpec)}
+              label="Temperature Out of Spec"
+              icon={Thermometer}
               variant="destructive"
-              onFilterClick={() => setActivityFilter("breach")}
+              onFilterClick={() => setActivityFilter("tempOutOfSpec")}
             />
           </div>
 

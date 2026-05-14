@@ -42,7 +42,7 @@ export default function FacilitiesAlertsView() {
       {loading && (
         <LoadingOverlay
           title="Loading alerts..."
-          subtitle="Fetching the latest breach alerts"
+          subtitle="Fetching the latest out-of-spec alerts"
         />
       )}
 
@@ -51,7 +51,7 @@ export default function FacilitiesAlertsView() {
           style={{ marginTop: 10, padding: "14px 24px", flexShrink: 0 }}
           className="bg-background"
         >
-          <h1 className="text-2xl font-bold">Manage Sensor Breach Alerts</h1>
+          <h1 className="text-2xl font-bold">Manage Alerts</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {stats.acknowledgedCount} Acknowledged {"\u00B7"} {stats.openCount} Open {"\u00B7"}{" "}
             {stats.resolvedCount} Resolved
@@ -99,14 +99,14 @@ export default function FacilitiesAlertsView() {
                 variant="warning"
               />
               <DashboardCard
-                value={String(stats.escalatedCount)}
-                label="Delayed"
+                value={String(stats.acknowledgedCount)}
+                label="Acknowledged"
                 icon={TriangleAlert}
                 variant="secondary"
               />
               <DashboardCard
-                value={String(stats.acknowledgedCount)}
-                label="Acknowledged"
+                value={String(stats.escalatedCount)}
+                label="Escalated"
                 icon={BellRing}
                 variant="destructive"
               />
@@ -134,28 +134,16 @@ export default function FacilitiesAlertsView() {
               }}
             >
               <div style={{ padding: "14px 20px", background: "var(--card)" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                  <span
-                    style={{
-                      width: 7,
-                      height: 7,
-                      borderRadius: "50%",
-                      flexShrink: 0,
-                      background: "var(--success)",
-                      display: "inline-block",
-                    }}
-                  />
-                  <p
-                    style={{
-                      fontWeight: 700,
-                      fontSize: 14,
-                      color: "var(--foreground)",
-                      marginLeft: 3,
-                    }}
-                  >
-                    Resolved
-                  </p>
-                </div>
+                <p
+                  style={{
+                    fontWeight: 700,
+                    fontSize: 14,
+                    color: "var(--foreground)",
+                    margin: 0,
+                  }}
+                >
+                  Resolved
+                </p>
               </div>
               <div style={{ padding: "16px 20px" }}>
                 {resolvedAlerts.length === 0 ? (
@@ -192,7 +180,3 @@ export default function FacilitiesAlertsView() {
     </>
   );
 }
-
-
-
-

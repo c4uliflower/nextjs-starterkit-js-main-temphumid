@@ -18,13 +18,13 @@ export const REASON_SELECT_OPTIONS = [
 ];
 
 export const SYMPTOM_LABELS = {
-  breach: "Breach",
+  breach: "Out of Spec",
   no_data: "No Data",
   stable: "Stable",
 };
 
 export const SYMPTOM_DOT = {
-  Breach: "#dc3545",
+  "Out of Spec": "#dc3545",
   "No Data": "#adb5bd",
   Stable: "#22c55e",
 };
@@ -246,7 +246,9 @@ export function buildQueuedDowntimeRecord({
 export function getDowntimeStats(stopLineList, pendingDone, maintenanceHistory) {
   return {
     activeCount: stopLineList.length,
-    breachCount: maintenanceHistory.filter((record) => record.symptom === "Breach").length,
+    breachCount: maintenanceHistory.filter(
+      (record) => record.symptom === "Breach" || record.symptom === "Out of Spec"
+    ).length,
     noDataCount: maintenanceHistory.filter((record) => record.symptom === "No Data").length,
     pendingCount: pendingDone.length,
     uploadedCount: maintenanceHistory.length,
