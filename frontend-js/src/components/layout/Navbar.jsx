@@ -197,6 +197,7 @@ export default function Navbar({ onSearchClick }) {
       {/* Right side */}
       <div className="ml-auto flex items-center gap-2">
         {/* Search trigger — desktop */}
+        {/*
         <button
           onClick={onSearchClick}
           className="hidden items-center gap-2 rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground shadow-xs transition-colors hover:bg-accent hover:text-accent-foreground md:inline-flex"
@@ -207,6 +208,7 @@ export default function Navbar({ onSearchClick }) {
             <span className="text-xs">Ctrl</span>K
           </kbd>
         </button>
+        */}
 
         {/* Search trigger — mobile */}
         <button

@@ -22,7 +22,7 @@ export function useFacilitiesBreachReadings(alertId) {
         setMeta(result.meta);
         setPage(targetPage);
       } catch (err) {
-        setError(err.response?.data?.message ?? "Failed to load breach history.");
+        setError(err.response?.data?.message ?? "Failed to load out-of-spec history.");
       } finally {
         setLoading(false);
       }

@@ -34,23 +34,53 @@ export function formatNotifiedBy(user) {
   return user.employee_no ? `${name} (${user.employee_no})` : name || "unknown";
 }
 
+export function isValueOutOfSpec(value, lowerLimit, upperLimit) {
+  if (value == null || lowerLimit == null || upperLimit == null) return false;
+  return value < lowerLimit || value > upperLimit;
+}
+
+export function getOutOfSpecReadingLabels(sensor) {
+  const labels = [];
+
+  if (isValueOutOfSpec(sensor.temp, sensor.tempLL, sensor.tempUL)) {
+    labels.push("Temp");
+  }
+
+  if (isValueOutOfSpec(sensor.humid, sensor.humidLL, sensor.humidUL)) {
+    labels.push("Humid");
+  }
+
+  return labels;
+}
+
 export function buildMonitoringTableData(floors) {
   return floors.flatMap((floor) =>
-    floor.sensors.map((sensor) => ({
-      id: `${floor.id}__${sensor.id}`,
-      areaId: sensor.areaId,
-      floor: floor.label,
-      name: sensor.name,
-      temp: sensor.temp ?? null,
-      humid: sensor.humid ?? null,
-      hasData: sensor.hasData ?? false,
-      breach: sensor.breach ?? false,
-      lastSeen: sensor.lastSeen ?? null,
-      tempUL: sensor.tempUL ?? null,
-      tempLL: sensor.tempLL ?? null,
-      humidUL: sensor.humidUL ?? null,
-      humidLL: sensor.humidLL ?? null,
-    }))
+    floor.sensors.map((sensor) => {
+      const temp = sensor.temp ?? null;
+      const humid = sensor.humid ?? null;
+      const tempUL = sensor.tempUL ?? null;
+      const tempLL = sensor.tempLL ?? null;
+      const humidUL = sensor.humidUL ?? null;
+      const humidLL = sensor.humidLL ?? null;
+
+      return {
+        id: `${floor.id}__${sensor.id}`,
+        areaId: sensor.areaId,
+        floor: floor.label,
+        name: sensor.name,
+        temp,
+        humid,
+        hasData: sensor.hasData ?? false,
+        breach: sensor.breach ?? false,
+        tempOutOfSpec: isValueOutOfSpec(temp, tempLL, tempUL),
+        humidOutOfSpec: isValueOutOfSpec(humid, humidLL, humidUL),
+        lastSeen: sensor.lastSeen ?? null,
+        tempUL,
+        tempLL,
+        humidUL,
+        humidLL,
+      };
+    })
   );
 }
 

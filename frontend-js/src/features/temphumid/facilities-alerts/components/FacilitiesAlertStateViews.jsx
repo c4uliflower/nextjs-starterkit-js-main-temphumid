@@ -15,7 +15,7 @@ export function FacilitiesScheduledOpenActions({
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {alert.verifyAttemptCount > 0 && (
         <p style={{ fontSize: 11, color: "#b45309", margin: 0 }}>
-          Previous verification failed - sensor still breaching.
+          Previous verification failed - sensor still out of spec.
         </p>
       )}
       <p style={{ fontSize: 11, color: "var(--muted-foreground)", margin: 0 }}>
@@ -76,7 +76,7 @@ export function FacilitiesUnscheduledOpenActions({
             {getFacilitiesActionLabel(alert)}
           </span>
           <p style={{ fontSize: 11, color: "#b45309", margin: 0 }}>
-            Previous verification failed - sensor still breaching. Try again or schedule for
+            Previous verification failed - sensor still out of spec. Try again or schedule for
             maintenance.
           </p>
         </>

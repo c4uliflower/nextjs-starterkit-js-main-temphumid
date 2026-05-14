@@ -173,21 +173,9 @@ export function FacilitiesKanbanColumn({
           flexShrink: 0,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: "50%",
-              background: col.dot,
-              display: "inline-block",
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>
-            {col.label}
-          </span>
-        </div>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>
+          {col.label}
+        </span>
         <span
           style={{
             fontSize: 11,
@@ -249,6 +237,3 @@ export function FacilitiesKanbanColumn({
     </div>
   );
 }
-
-
-
