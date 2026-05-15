@@ -1,4 +1,4 @@
-﻿import { validateDowntimeSensorLineName } from "@/features/temphumid/shared/utils/api";
+import { validateDowntimeSensorLineName } from "@/features/temphumid/shared/utils/api";
 import { formatAbsolute, formatTimer } from "@/utils/time";
 
 export const DOWNTIME_REASONS = [

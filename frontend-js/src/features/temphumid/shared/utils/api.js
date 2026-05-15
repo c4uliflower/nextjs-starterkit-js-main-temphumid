@@ -10,6 +10,11 @@ export async function fetchSensorStatusByFloor(floor, options = {}) {
   return response.data?.data ?? [];
 }
 
+export async function saveBatchSensorStatuses(payload) {
+  const response = await axios.post(`${API_BASE}/sensors/status/batch`, payload);
+  return response.data?.data ?? null;
+}
+
 export async function fetchBatchSensorLimits(areaIds) {
   const response = await axios.get(`${API_BASE}/sensors/limits/batch-show`, {
     params: { areaIds },
@@ -22,11 +27,6 @@ export async function fetchBatchSensorLimits(areaIds) {
 
 export async function saveBatchSensorLimits(payload) {
   const response = await axios.post(`${API_BASE}/sensors/limits/batch`, payload);
-  return response.data?.data ?? null;
-}
-
-export async function saveBatchSensorStatuses(payload) {
-  const response = await axios.post(`${API_BASE}/sensors/status/batch`, payload);
   return response.data?.data ?? null;
 }
 
@@ -83,16 +83,6 @@ export async function processFacilitiesVerifying() {
 export async function processFacilitiesReadings() {
   const response = await axios.post(`${API_BASE}/facilities/alerts/process-readings`);
   return response.data?.data ?? [];
-}
-
-// DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: remove this API helper before shipping.
-export async function simulateDevSensorReading(payload) {
-  const response = await axios.post(`${API_BASE}/dev/simulate-reading`, {
-    processAlerts: true,
-    ...payload,
-  });
-
-  return response.data?.data ?? null;
 }
 
 export async function fetchFacilitiesBreachEvents(alertId, page = 1) {

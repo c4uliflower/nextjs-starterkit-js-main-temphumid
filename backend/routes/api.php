@@ -10,6 +10,7 @@ use App\Http\Controllers\TempHumid\BreachEventController;
 use App\Http\Controllers\TempHumid\DevReadingSimulationController;
 use App\Http\Controllers\TempHumid\FacilitiesAlertController;
 use App\Http\Controllers\TempHumid\DowntimeController;
+use App\Http\Controllers\TempHumid\MonitoringSnapshotController;
 use App\Http\Controllers\TempHumid\RepairController;
 use App\Http\Controllers\TempHumid\SensorController;
 use App\Http\Controllers\TempHumid\SensorLimitController;
@@ -62,6 +63,7 @@ Route::middleware(['auth:mat-auth'])->group(function () {
         Route::get('/sensors/readings/current',          [SensorController::class, 'currentReadings']);
         Route::get('/sensors/readings/by-area/{areaId}', [SensorController::class, 'readingByAreaId']);
         Route::get('/dashboard/summary',                 [SensorController::class, 'summary']);
+        Route::get('/monitoring/snapshot',               MonitoringSnapshotController::class);
         Route::get('/sensors/{areaId}/readings/history', [SensorReadingController::class, 'history']);
         Route::get('/sensors/{areaId}/limits',           [SensorLimitController::class, 'show']);
         Route::post('/sensors/{areaId}/limits',          [SensorLimitController::class, 'update']);

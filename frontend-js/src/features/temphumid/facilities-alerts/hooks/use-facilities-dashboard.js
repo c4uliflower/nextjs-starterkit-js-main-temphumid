@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -11,8 +11,6 @@ import {
   escalateFacilitiesAlert,
   fetchDowntimeActive,
   fetchFacilitiesAlerts,
-  processFacilitiesReadings,
-  processFacilitiesVerifying,
 } from "@/features/temphumid/shared/utils/api";
 import { minutesSince, parseUTC } from "@/utils/time";
 
@@ -48,37 +46,11 @@ export function useFacilitiesDashboard() {
   const [fetchError, setFetchError] = useState(null);
   const [selectedResolved, setSelectedResolved] = useState(null);
 
-  const processVerifyingAlerts = useCallback(async (currentAlerts) => {
-    const verifying = currentAlerts.filter((alert) => alert.status === "verifying");
-    if (verifying.length === 0) return false;
-    try {
-      const updated = await processFacilitiesVerifying();
-      return Array.isArray(updated) && updated.length > 0;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  const processReadings = useCallback(async () => {
-    try {
-      await processFacilitiesReadings();
-    } catch {
-      // Non-critical.
-    }
-  }, []);
-
   const fetchAlerts = useCallback(async () => {
     try {
       if (!alertsCache) setLoading(true);
 
-      let nextAlerts = await fetchFacilitiesAlerts();
-
-      const didUpdateVerifying = await processVerifyingAlerts(nextAlerts);
-      await processReadings();
-
-      if (didUpdateVerifying) {
-        nextAlerts = await fetchFacilitiesAlerts();
-      }
+      const nextAlerts = await fetchFacilitiesAlerts();
 
       const downtime = await fetchDowntimeActive().catch(() => []);
       const downtimeByArea = {};
@@ -100,7 +72,7 @@ export function useFacilitiesDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [processReadings, processVerifyingAlerts]);
+  }, []);
 
   const applyIncomingAlert = useCallback((incomingAlert) => {
     if (!incomingAlert?.id) return false;

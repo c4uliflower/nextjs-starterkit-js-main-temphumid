@@ -4,9 +4,8 @@ import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { simulateDevSensorReading } from "@/features/temphumid/shared/utils/api";
+import { simulateDevSensorReading } from "@/features/temphumid/dev/utils/api";
 
-// DEV_READING_SIMULATOR_REMOVE_BEFORE_PROD: delete this whole component before shipping.
 const DEV_SIMULATOR_ENABLED = process.env.NODE_ENV === "development";
 const DEFAULT_AREA_ID = "P1F1-04";
 

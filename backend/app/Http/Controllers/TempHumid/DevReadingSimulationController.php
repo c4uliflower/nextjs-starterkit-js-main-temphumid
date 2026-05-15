@@ -77,11 +77,8 @@ class DevReadingSimulationController extends Controller
             $processPayload = null;
 
             if (($validated['processAlerts'] ?? true) === true) {
-                $processResponse = $this->facilitiesAlertService->processReadings();
-                $processPayload = json_decode((string) $processResponse->getContent(), true);
-
-                $verifyingResponse = $this->facilitiesAlertService->processVerifying();
-                $processPayload['verifying'] = json_decode((string) $verifyingResponse->getContent(), true);
+                $processPayload = $this->facilitiesAlertService->processReadings();
+                $processPayload['verifying'] = $this->facilitiesAlertService->processVerifying();
             }
 
             return response()->json([
