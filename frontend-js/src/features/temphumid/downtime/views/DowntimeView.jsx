@@ -71,7 +71,7 @@ export default function DowntimeView() {
           >
             <div>
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold text-foreground">Sensor IoT Maintenance</h1>
+                <h1 className="text-2xl font-bold text-foreground">IoT Sensor Maintenance</h1>
                 <span
                   style={{
                     border: "1px solid var(--border)",
