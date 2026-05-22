@@ -17,8 +17,13 @@ export const REPAIR_REASON_OPTIONS = [
 ];
 
 export const REPAIR_STATUS_DOT = {
-  Active: "#16a34a",
-  Inactive: "#64748b",
+  Active: "var(--success)",
+  Inactive: "var(--secondary)",
+};
+
+export const REPAIR_STATUS_FOREGROUND = {
+  Active: "var(--success-foreground)",
+  Inactive: "var(--secondary-foreground)",
 };
 
 export const REPAIR_GLOBAL_STYLES = `
@@ -34,6 +39,7 @@ const EMPTY_FORM_DATA = {
   location: "",
   description: "",
   status: "",
+  installedDate: "",
   technicianId: "",
   reason: "",
   remarks: "",
@@ -57,7 +63,11 @@ export function createRepairFormData(overrides = {}) {
 }
 
 export function getRepairStatusColor(status) {
-  return REPAIR_STATUS_DOT[status] ?? "#64748b";
+  return REPAIR_STATUS_DOT[status] ?? "var(--secondary)";
+}
+
+export function getRepairStatusForeground(status) {
+  return REPAIR_STATUS_FOREGROUND[status] ?? "var(--secondary-foreground)";
 }
 
 export async function parseRepairAcuQr(rawValue) {
@@ -128,6 +138,7 @@ export function mapActiveRepairRecord(record) {
     location: record.location,
     description: record.description,
     acuStatus: record.acu_status,
+    installedDate: record.installed_date ?? "",
     technicianId: record.processed_by,
     reason: record.repair_reason ?? "",
     remarks: record.remarks ?? "",
@@ -161,6 +172,7 @@ export function isSameRepairHistory(previous = [], next = []) {
       left.machineQr !== right.machineQr ||
       left.sourceAlertId !== right.sourceAlertId ||
       left.location !== right.location ||
+      left.installedDate !== right.installedDate ||
       left.acuStatus !== right.acuStatus ||
       left.technicianId !== right.technicianId ||
       left.reason !== right.reason ||
@@ -208,6 +220,7 @@ export function buildQueuedRepairFormData(acuInfo, technicianId) {
     location: acuInfo?.location ?? "",
     description: acuInfo?.description ?? "",
     status: acuInfo?.status ?? "",
+    installedDate: acuInfo?.installedDate ?? "",
     technicianId: technicianId ?? "",
   });
 }
@@ -222,6 +235,7 @@ export function buildQueuedRepairRecord({ id, processedAt, acuInfo, techInfo }) 
     location: acuInfo.location,
     description: acuInfo.description,
     acuStatus: acuInfo.status,
+    installedDate: acuInfo.installedDate ?? "",
     technicianId: techInfo.technicianId,
     processedAt,
     markedDoneAt: null,
@@ -240,6 +254,7 @@ export function buildSelectedRepairFormData(record) {
     location: record?.location ?? "",
     description: record?.description ?? "",
     status: record?.acuStatus ?? "",
+    installedDate: record?.installedDate ?? "",
     technicianId: record?.technicianId ?? "",
     reason: record?.reason ?? "",
     remarks: record?.remarks ?? "",

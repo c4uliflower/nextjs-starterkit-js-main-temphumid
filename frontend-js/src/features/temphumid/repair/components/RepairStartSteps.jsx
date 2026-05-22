@@ -4,7 +4,10 @@ import {
   RepairConfirmedChip,
 } from "@/features/temphumid/repair/components/RepairAtoms";
 import { DowntimeQrScanner } from "@/features/temphumid/downtime/components/DowntimeQrScanner";
-import { getRepairStatusColor } from "@/features/temphumid/repair/utils/repair";
+import {
+  getRepairStatusColor,
+  getRepairStatusForeground,
+} from "@/features/temphumid/repair/utils/repair";
 
 export function RepairAcuScanStep({ onError, onScan, saving, scanError }) {
   return (
@@ -37,8 +40,8 @@ export function RepairTechnicianScanStep({
       <RepairConfirmedChip
         label={acuInfo.machineId}
         sub={`${acuInfo.location || "No location"} \u00B7 ${acuInfo.machineQr}`}
-        color="#fff"
-        bg="#0f766e"
+        color="var(--primary-foreground)"
+        bg="var(--primary)"
         onClear={onClearAcu}
       />
       <DowntimeQrScanner
@@ -77,19 +80,19 @@ export function RepairConfirmStartStep({
         <RepairConfirmedChip
           label={acuInfo.machineId}
           sub={`${acuInfo.location || "No location"} \u00B7 ${acuInfo.description || "-"}`}
-          color="#fff"
-          bg="#0f766e"
+          color="var(--primary-foreground)"
+          bg="var(--primary)"
           onClear={onClearAcu}
         />
         <RepairConfirmedChip
           label={`Operator ID: ${techInfo.technicianId}`}
-          color="#fff"
-          bg="#0f766e"
+          color="var(--primary-foreground)"
+          bg="var(--primary)"
           onClear={onClearTech}
         />
         <RepairConfirmedChip
           label={`Status: ${acuInfo.status}`}
-          color="#fff"
+          color={getRepairStatusForeground(acuInfo.status)}
           bg={getRepairStatusColor(acuInfo.status)}
         />
       </div>

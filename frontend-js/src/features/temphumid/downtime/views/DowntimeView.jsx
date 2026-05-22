@@ -45,7 +45,6 @@ export default function DowntimeView() {
     setSelectedHistory,
     startOpen,
     stopLineList,
-    symptom,
     uploadOpen,
   } = useDowntimeDashboard();
 
@@ -155,7 +154,7 @@ export default function DowntimeView() {
             />
 
             <div>
-              <DowntimeFormPanel formData={formData} symptom={symptom} />
+              <DowntimeFormPanel formData={formData} />
             </div>
 
             {historyError && (

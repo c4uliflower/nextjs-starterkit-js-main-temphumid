@@ -70,7 +70,7 @@ export function FacilitiesAlertCard({
       style={{
         background: "var(--card)",
         border: "1px solid var(--border)",
-        borderLeft: `3px solid ${alertState.isEscalated ? "#dc2626" : col.accent}`,
+        borderLeft: `4px solid ${col.cardAccent ?? col.accent}`,
         borderRadius: 6,
         overflow: "hidden",
         opacity: acting ? 0.6 : 1,
@@ -167,21 +167,23 @@ export function FacilitiesKanbanColumn({
         style={{
           padding: "12px 16px",
           borderBottom: "1px solid var(--border)",
+          background: col.headerBg ?? "var(--card)",
+          color: col.headerFg ?? "var(--foreground)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           flexShrink: 0,
         }}
       >
-        <span style={{ fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>
+        <span style={{ fontSize: 13, fontWeight: 700, color: "inherit" }}>
           {col.label}
         </span>
         <span
           style={{
             fontSize: 11,
             fontWeight: 700,
-            color: "var(--foreground)",
-            background: "var(--muted)",
+            color: "inherit",
+            background: "color-mix(in oklch, currentColor 16%, transparent)",
             borderRadius: 5,
             padding: "1px 8px",
           }}
@@ -218,7 +220,7 @@ export function FacilitiesKanbanColumn({
                 margin: 0,
               }}
             >
-              No {col.label.toLowerCase()} alerts
+              {col.emptyLabel ?? `No ${col.label.toLowerCase()} alerts`}
             </p>
           </div>
         ) : (

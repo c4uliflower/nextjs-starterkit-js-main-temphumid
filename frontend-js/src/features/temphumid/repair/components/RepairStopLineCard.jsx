@@ -60,7 +60,7 @@ export function RepairStopLineCard({ record, onClick }) {
             style={{
               fontWeight: 700,
               fontSize: 13,
-              color: "#fff",
+              color: "var(--destructive-foreground)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -69,7 +69,14 @@ export function RepairStopLineCard({ record, onClick }) {
             {record.machineId}
           </span>
         </div>
-        <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: "#fff" }}>
+        <span
+          style={{
+            fontFamily: "monospace",
+            fontSize: 13,
+            fontWeight: 700,
+            color: "var(--destructive-foreground)",
+          }}
+        >
           {formatTimer(elapsed)}
         </span>
       </div>

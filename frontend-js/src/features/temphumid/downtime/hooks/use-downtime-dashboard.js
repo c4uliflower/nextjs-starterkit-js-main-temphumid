@@ -212,7 +212,7 @@ export function useDowntimeDashboard() {
 
         updatedRecord = {
           ...record,
-          reason: payload.reasonLabel,
+          reason: payload.reasonLabel ?? record.reason,
           remarks: payload.remarks,
           markedDoneAt: payload.markedDoneAt,
           durationSeconds: payload.durationSeconds,

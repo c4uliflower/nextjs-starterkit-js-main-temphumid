@@ -61,12 +61,14 @@ class DowntimeService
             ];
         }
 
-        if ($sensor->getAttribute('Status') !== 'Active') {
+        $sensorStatus = $this->normalizeSensorStatus($sensor->getAttribute('Status'));
+
+        if ($sensorStatus !== 'Active') {
             return [
                 'status' => 200,
                 'body' => [
                     'valid' => false,
-                    'message' => "{$sensor->lineName()} is currently inactive.",
+                    'message' => "{$sensor->lineName()} is currently {$sensorStatus}.",
                 ],
             ];
         }
@@ -98,10 +100,12 @@ class DowntimeService
                 'valid' => true,
                 'sensor' => [
                     'areaId' => $sensor->areaId(),
+                    'chipId' => $sensor->chipId(),
                     'lineName' => $sensor->lineName(),
                     'plant' => 'P' . $sensor->getAttribute('Plant'),
                     'floor' => 'F' . $sensor->getAttribute('Floor'),
                     'status' => $this->resolveSensorStatus($sensor),
+                    'sensorStatus' => $sensorStatus,
                     'sourceAlertId' => $facilitiesAlert?->getAttribute('ID'),
                 ],
             ],
@@ -126,6 +130,10 @@ class DowntimeService
             ];
         }
 
+        $sensor = Sensor::query()
+            ->where('Area ID', $data['area_id'])
+            ->orWhere('Line Name', $data['line_name'])
+            ->first();
         $now = now('Asia/Manila');
         $id = DowntimeRecord::query()->insertGetId([
             'Area ID' => $data['area_id'],
@@ -151,9 +159,11 @@ class DowntimeService
                 'data' => [
                     'id' => $id,
                     'area_id' => $data['area_id'],
+                    'chip_id' => $sensor?->chipId(),
                     'line_name' => $data['line_name'],
                     'processed_by' => $data['processed_by'],
                     'symptom' => $data['symptom'],
+                    'sensor_status' => $this->normalizeSensorStatus($sensor?->getAttribute('Status')),
                     'processed_at' => $now->toISOString(),
                     'status' => DowntimeRecord::STATUS_ONGOING,
                 ],
@@ -186,15 +196,20 @@ class DowntimeService
         $processedAt = new Carbon($record->getAttribute('processed_at'));
         $durationSeconds = (int) $processedAt->diffInSeconds($markedDoneAt);
 
+        $values = [
+            'remarks' => $data['remarks'] ?? null,
+            'marked_done_at' => $markedDoneAt,
+            'marked_done_by' => $markedDoneBy,
+            'duration_seconds' => $durationSeconds,
+        ];
+
+        if (array_key_exists('maintenance_reason', $data)) {
+            $values['maintenance_reason'] = $data['maintenance_reason'];
+        }
+
         DowntimeRecord::query()
             ->where('ID', $id)
-            ->update([
-                'maintenance_reason' => $data['maintenance_reason'] ?? null,
-                'remarks' => $data['remarks'] ?? null,
-                'marked_done_at' => $markedDoneAt,
-                'marked_done_by' => $markedDoneBy,
-                'duration_seconds' => $durationSeconds,
-            ]);
+            ->update($values);
 
         return [
             'status' => 200,
@@ -253,7 +268,10 @@ class DowntimeService
             ];
 
             if ($draft !== null) {
-                $values['maintenance_reason'] = $draft['maintenance_reason'] ?? null;
+                if (array_key_exists('maintenance_reason', $draft)) {
+                    $values['maintenance_reason'] = $draft['maintenance_reason'];
+                }
+
                 $values['remarks'] = $draft['remarks'] ?? null;
             }
 
@@ -332,17 +350,39 @@ class DowntimeService
         return $breached ? 'breach' : 'stable';
     }
 
+    private function normalizeSensorStatus(mixed $status): string
+    {
+        $normalized = strtolower(trim((string) $status));
+
+        if ($normalized === 'active') {
+            return 'Active';
+        }
+
+        if ($normalized === 'inactive' || $normalized === 'not active') {
+            return 'Inactive';
+        }
+
+        return trim((string) $status) ?: 'Inactive';
+    }
+
     /**
      * @return array<string, mixed>
      */
     private function mapRecord(DowntimeRecord $record): array
     {
+        $sensor = Sensor::query()
+            ->where('Area ID', $record->getAttribute('Area ID'))
+            ->orWhere('Line Name', $record->getAttribute('Line Name'))
+            ->first(['Status', 'Chip ID']);
+
         return [
             'id' => $record->getAttribute('ID'),
             'area_id' => $record->getAttribute('Area ID'),
+            'chip_id' => $sensor?->chipId(),
             'line_name' => $record->getAttribute('Line Name'),
             'processed_by' => $record->getAttribute('processed_by'),
             'symptom' => $record->getAttribute('symptom'),
+            'sensor_status' => $this->normalizeSensorStatus($sensor?->getAttribute('Status')),
             'maintenance_reason' => $record->getAttribute('maintenance_reason'),
             'remarks' => $record->getAttribute('remarks'),
             'processed_at' => $record->getAttribute('processed_at'),

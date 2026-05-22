@@ -1,6 +1,7 @@
 import { formatAbsolute, formatTimer } from "@/utils/time";
+import { getSensorLifecycleStatusColor } from "@/features/temphumid/downtime/utils/downtime";
 
-function HistoryDetailField({ label, value }) {
+function HistoryDetailField({ label, value, valueStyle }) {
   return (
     <div
       style={{
@@ -27,6 +28,7 @@ function HistoryDetailField({ label, value }) {
           color: "var(--foreground)",
           fontWeight: 500,
           wordBreak: "break-word",
+          ...valueStyle,
         }}
       >
         {value || <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>-</span>}
@@ -43,8 +45,16 @@ export function DowntimeHistoryDetail({ record }) {
       <HistoryDetailField label="Line Name" value={record.lineName} />
       <HistoryDetailField label="Area ID" value={record.areaId} />
       <HistoryDetailField label="Operator" value={record.technicianId} />
-      <HistoryDetailField label="Symptom" value={record.symptom} />
-      <HistoryDetailField label="Reason" value={record.reason} />
+      <HistoryDetailField
+        label="Status"
+        value={record.sensorStatus}
+        valueStyle={
+          record.sensorStatus
+            ? { color: getSensorLifecycleStatusColor(record.sensorStatus), fontWeight: 700 }
+            : {}
+        }
+      />
+      <HistoryDetailField label="Chip ID" value={record.chipId} />
       <HistoryDetailField label="Remarks" value={record.remarks} />
       <HistoryDetailField
         label="Duration"

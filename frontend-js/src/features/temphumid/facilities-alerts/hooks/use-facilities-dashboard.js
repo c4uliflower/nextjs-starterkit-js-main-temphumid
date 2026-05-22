@@ -6,6 +6,7 @@ import {
   ESCALATION_THRESHOLD_MINS,
   buildFacilitiesStats,
   getFacilitiesEscalatedCount,
+  isFacilitiesDelayActionable,
 } from "@/features/temphumid/facilities-alerts/utils/facilities";
 import {
   escalateFacilitiesAlert,
@@ -147,14 +148,25 @@ export function useFacilitiesDashboard() {
   const acknowledgedAlerts = useMemo(
     () =>
       alerts
-        .filter((alert) => alert.status === "acknowledged")
+        .filter((alert) => alert.status === "acknowledged" && !isFacilitiesDelayActionable(alert))
+        .sort((left, right) => parseUTC(left.acknowledgedAt) - parseUTC(right.acknowledgedAt)),
+    [alerts]
+  );
+  const delayedAlerts = useMemo(
+    () =>
+      alerts
+        .filter(isFacilitiesDelayActionable)
         .sort((left, right) => parseUTC(left.acknowledgedAt) - parseUTC(right.acknowledgedAt)),
     [alerts]
   );
   const openAlerts = useMemo(
     () =>
       alerts
-        .filter((alert) => alert.status === "open" || alert.status === "verifying")
+        .filter(
+          (alert) =>
+            (alert.status === "open" || alert.status === "verifying") &&
+            !isFacilitiesDelayActionable(alert)
+        )
         .sort((left, right) => parseUTC(left.acknowledgedAt) - parseUTC(right.acknowledgedAt)),
     [alerts]
   );
@@ -229,8 +241,8 @@ export function useFacilitiesDashboard() {
   const handleConflict = useCallback(() => fetchAlerts(), [fetchAlerts]);
 
   const alertsByCol = useMemo(
-    () => ({ acknowledged: acknowledgedAlerts, open: openAlerts }),
-    [acknowledgedAlerts, openAlerts]
+    () => ({ acknowledged: acknowledgedAlerts, delayed: delayedAlerts, open: openAlerts }),
+    [acknowledgedAlerts, delayedAlerts, openAlerts]
   );
 
   const firedThresholds = useRef({});
@@ -287,6 +299,7 @@ export function useFacilitiesDashboard() {
     acknowledgedAlerts,
     alerts,
     alertsByCol,
+    delayedAlerts,
     escalatedCount,
     fetchError,
     handleAcknowledge,

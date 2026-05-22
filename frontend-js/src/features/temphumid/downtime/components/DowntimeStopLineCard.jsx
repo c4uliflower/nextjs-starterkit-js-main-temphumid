@@ -1,12 +1,12 @@
 ﻿"use client";
 
 import { useDowntimeElapsed } from "@/features/temphumid/downtime/hooks/use-downtime-elapsed";
-import { getDowntimeSymptomColor } from "@/features/temphumid/downtime/utils/downtime";
+import { getSensorLifecycleStatusColor } from "@/features/temphumid/downtime/utils/downtime";
 import { formatAbsolute, formatTimer } from "@/utils/time";
 
 export function DowntimeStopLineCard({ record, onClick }) {
   const elapsed = useDowntimeElapsed(record.processedAt, record.markedDoneAt);
-  const symptomDot = getDowntimeSymptomColor(record.symptom);
+  const statusDot = getSensorLifecycleStatusColor(record.sensorStatus);
   const isDisabled = !!record.markedDoneAt;
 
   return (
@@ -87,12 +87,12 @@ export function DowntimeStopLineCard({ record, onClick }) {
               width: 6,
               height: 6,
               borderRadius: "50%",
-              background: symptomDot,
+              background: statusDot,
               flexShrink: 0,
             }}
           />
           <span style={{ fontSize: 12, color: "var(--foreground)", fontWeight: 500 }}>
-            {record.symptom}
+            {record.sensorStatus}
           </span>
         </div>
         <div style={{ fontSize: 10, color: "var(--muted-foreground)", marginTop: 1 }}>

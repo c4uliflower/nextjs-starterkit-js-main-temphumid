@@ -22,8 +22,34 @@ export const ESCALATION_THRESHOLD_MINS = 30;
 export const NO_READING_WARN_MINS = 45;
 
 export const ACTIVE_COLUMNS = [
-  { key: "acknowledged", label: "Acknowledged", accent: "#dc2626", dot: "#dc2626" },
-  { key: "open", label: "Open", accent: "#f59e0b", dot: "#f59e0b" },
+  {
+    key: "acknowledged",
+    label: "Acknowledged",
+    accent: "#dc2626",
+    dot: "#dc2626",
+    headerBg: "var(--secondary)",
+    headerFg: "var(--secondary-foreground)",
+    cardAccent: "var(--secondary)",
+  },
+  {
+    key: "delayed",
+    label: "Delayed",
+    accent: "#b91c1c",
+    dot: "#dc2626",
+    emptyLabel: "No delayed alerts",
+    headerBg: "var(--destructive)",
+    headerFg: "var(--destructive-foreground)",
+    cardAccent: "var(--destructive)",
+  },
+  {
+    key: "open",
+    label: "Open",
+    accent: "#f59e0b",
+    dot: "#f59e0b",
+    headerBg: "var(--warning)",
+    headerFg: "var(--warning-foreground)",
+    cardAccent: "var(--warning)",
+  },
 ];
 
 export const FACILITIES_STYLES = `

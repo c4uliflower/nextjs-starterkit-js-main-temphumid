@@ -2,30 +2,17 @@
 
 import { useEffect, useState } from "react";
 
-import { Combobox } from "@/components/custom/Combobox";
 import { Button } from "@/components/ui/button";
 
 import {
   getRepairStatusColor,
-  REPAIR_REASONS,
-  REPAIR_REASON_OPTIONS,
+  getRepairStatusForeground,
 } from "@/features/temphumid/repair/utils/repair";
 import { uploadRepairRecords } from "@/features/temphumid/shared/utils/api";
-
-function getRepairReasonId(value) {
-  if (!value) return "";
-  return REPAIR_REASONS.find((reason) => reason.id === value || reason.label === value)?.id ?? "";
-}
-
-function getRepairReasonLabel(value) {
-  if (!value) return "";
-  return REPAIR_REASONS.find((reason) => reason.id === value)?.label ?? value;
-}
 
 function buildRepairDrafts(records) {
   return records.reduce((drafts, record) => {
     drafts[record.id] = {
-      reason: getRepairReasonId(record.reason),
       remarks: record.remarks ?? "",
     };
     return drafts;
@@ -35,6 +22,7 @@ function buildRepairDrafts(records) {
 function PendingRepairUploadRecord({ disabled, draft, onDraftChange, record }) {
   const label = record.acuStatus || "Unknown";
   const color = getRepairStatusColor(label);
+  const foreground = getRepairStatusForeground(label);
 
   return (
     <div
@@ -53,7 +41,7 @@ function PendingRepairUploadRecord({ disabled, draft, onDraftChange, record }) {
             padding: "2px 8px",
             borderRadius: 5,
             background: color,
-            color: "#fff",
+            color: foreground,
             textTransform: "uppercase",
             letterSpacing: ".04em",
             flexShrink: 0,
@@ -80,19 +68,6 @@ function PendingRepairUploadRecord({ disabled, draft, onDraftChange, record }) {
       </div>
 
       <div className="mt-3 flex flex-col gap-3">
-        <div>
-          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Reason
-          </label>
-          <Combobox
-            options={REPAIR_REASON_OPTIONS}
-            value={draft.reason}
-            onValueChange={(value) => onDraftChange(record.id, { reason: value })}
-            placeholder="Optional"
-            disabled={disabled}
-            className="mt-2 w-full"
-          />
-        </div>
         <div>
           <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Remarks
@@ -137,7 +112,7 @@ export function UploadRepairContent({ pendingDone, onUpload, onClose }) {
     setDrafts((previous) => ({
       ...previous,
       [id]: {
-        ...(previous[id] ?? { reason: "", remarks: "" }),
+        ...(previous[id] ?? { remarks: "" }),
         ...patch,
       },
     }));
@@ -150,7 +125,6 @@ export function UploadRepairContent({ pendingDone, onUpload, onClose }) {
     try {
       const records = pendingDone.map((record) => ({
         ...record,
-        reason: getRepairReasonLabel(drafts[record.id]?.reason ?? ""),
         remarks: drafts[record.id]?.remarks?.trim() ?? "",
       }));
 
@@ -182,7 +156,7 @@ export function UploadRepairContent({ pendingDone, onUpload, onClose }) {
           <PendingRepairUploadRecord
             key={record.id}
             disabled={saving}
-            draft={drafts[record.id] ?? { reason: "", remarks: "" }}
+            draft={drafts[record.id] ?? { remarks: "" }}
             onDraftChange={updateDraft}
             record={record}
           />

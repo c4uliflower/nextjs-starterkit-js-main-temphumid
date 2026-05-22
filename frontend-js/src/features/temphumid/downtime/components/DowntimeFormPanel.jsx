@@ -1,9 +1,10 @@
 ﻿"use client";
 
 import { PaneField } from "@/features/temphumid/downtime/components/DowntimeAtoms";
+import { getSensorLifecycleStatusColor } from "@/features/temphumid/downtime/utils/downtime";
 
-export function DowntimeFormPanel({ formData, symptom }) {
-  const hasData = !!(formData.lineName || symptom);
+export function DowntimeFormPanel({ formData }) {
+  const hasData = !!(formData.lineName || formData.sensorStatus);
 
   return (
     <div
@@ -45,7 +46,7 @@ export function DowntimeFormPanel({ formData, symptom }) {
           style={{
             border: "1px solid var(--border)",
             borderRadius: 999,
-            color: hasData ? "#435ebe" : "var(--muted-foreground)",
+            color: hasData ? "var(--primary)" : "var(--muted-foreground)",
             fontSize: 12,
             fontWeight: 700,
             padding: "3px 9px",
@@ -81,13 +82,17 @@ export function DowntimeFormPanel({ formData, symptom }) {
           >
             <PaneField
               label="Status"
-              value={symptom}
-              valueStyle={symptom && symptom !== "-" ? { color: "#dc3545", fontWeight: 700 } : {}}
+              value={formData.sensorStatus}
+              valueStyle={
+                formData.sensorStatus
+                  ? { color: getSensorLifecycleStatusColor(formData.sensorStatus), fontWeight: 700 }
+                  : {}
+              }
             />
             <PaneField label="Line Name" value={formData.lineName} />
             <PaneField label="Area ID" value={formData.areaId} />
             <PaneField label="Operator" value={formData.technicianId} />
-            <PaneField label="Reason" value={formData.reason} />
+            <PaneField label="Chip ID" value={formData.chipId} />
             <PaneField label="Remarks" value={formData.remarks} />
             <PaneField label="Duration" value={formData.duration} />
             <PaneField label="Marked Done" value={formData.markedDone} />

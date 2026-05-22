@@ -143,7 +143,6 @@ export function StartDowntimeContent({ onQueued, onClose }) {
           onConfirm={handleQueue}
           saving={saving}
           sensorInfo={sensorInfo}
-          symptomLabel={symptomLabel}
           techInfo={techInfo}
         />
       )}

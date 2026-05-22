@@ -135,7 +135,6 @@ export async function uploadDowntimeRecords(records) {
           .filter((record) => typeof record === "object")
           .map((record) => ({
             id: Number(record.id),
-            maintenance_reason: record.reason || record.maintenance_reason || null,
             remarks: record.remarks || null,
           })),
       }
@@ -184,7 +183,6 @@ export async function uploadRepairRecords(records) {
           .filter((record) => typeof record === "object")
           .map((record) => ({
             id: Number(record.id),
-            repair_reason: record.reason || record.repair_reason || null,
             remarks: record.remarks || null,
           })),
       }

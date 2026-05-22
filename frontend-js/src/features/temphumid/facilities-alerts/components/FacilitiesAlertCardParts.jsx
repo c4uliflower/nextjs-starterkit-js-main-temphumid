@@ -30,14 +30,14 @@ export function FacilitiesAlertCardHeader({
           gap: 6,
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, flex: 1 }}>
           <span
             style={{
               width: 7,
               height: 7,
               borderRadius: "50%",
               flexShrink: 0,
-              background: alertState.isEscalated ? "#dc2626" : col.dot,
+              background: col.cardAccent ?? col.dot,
               display: "inline-block",
               animation:
                 alertState.isEscalated && alertState.isAcknowledged
@@ -59,6 +59,18 @@ export function FacilitiesAlertCardHeader({
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+          {col.key === "delayed" && alertState.delayedLabel && (
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: "var(--destructive)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {alertState.delayedLabel}
+            </span>
+          )}
           {(alertState.isOpen || alertState.isVerifying) && (
             <>
               {alert.actionType && (
@@ -95,23 +107,6 @@ export function FacilitiesAlertCardHeader({
               }}
             >
               {verifyState.isStale ? "Verifying - No reading" : "Verifying..."}
-            </span>
-          )}
-          {alertState.isEscalated && (
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 800,
-                padding: "0px 5px",
-                borderRadius: 5,
-                flexShrink: 0,
-                background: "#fee2e2",
-                color: "#dc2626",
-                border: "1px solid #fca5a5",
-                letterSpacing: ".04em",
-              }}
-            >
-              {alertState.delayedLabel}
             </span>
           )}
         </div>

@@ -73,7 +73,7 @@ export function RepairStepBar({ step, total = 3 }) {
             flex: 1,
             height: 3,
             borderRadius: 5,
-            background: index < step ? "#0f766e" : "var(--border)",
+            background: index < step ? "var(--primary)" : "var(--border)",
             transition: "background .2s",
           }}
         />
