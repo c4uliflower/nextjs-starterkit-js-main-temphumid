@@ -24,9 +24,9 @@ export const SYMPTOM_LABELS = {
 };
 
 export const SYMPTOM_DOT = {
-  "Out of Spec": "#dc3545",
-  "No Data": "#adb5bd",
-  Stable: "#22c55e",
+  "Out of Spec": "var(--destructive)",
+  "No Data": "var(--secondary)",
+  Stable: "var(--success)",
 };
 
 export const DOWNTIME_GLOBAL_STYLES = `
@@ -68,7 +68,7 @@ export function getDowntimeSymptomLabel(symptom) {
 }
 
 export function getDowntimeSymptomColor(symptom) {
-  return SYMPTOM_DOT[getDowntimeSymptomLabel(symptom)] ?? "#adb5bd";
+  return SYMPTOM_DOT[getDowntimeSymptomLabel(symptom)] ?? "var(--secondary)";
 }
 
 export function normalizeSensorLifecycleStatus(status) {

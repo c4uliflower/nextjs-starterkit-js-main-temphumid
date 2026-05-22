@@ -8,6 +8,7 @@ export function DowntimeStopLineCard({ record, onClick }) {
   const elapsed = useDowntimeElapsed(record.processedAt, record.markedDoneAt);
   const statusDot = getSensorLifecycleStatusColor(record.sensorStatus);
   const isDisabled = !!record.markedDoneAt;
+  const destructiveColor = "var(--destructive)";
 
   return (
     <div
@@ -16,28 +17,30 @@ export function DowntimeStopLineCard({ record, onClick }) {
       }}
       style={{
         background: "var(--card)",
-        border: "1.5px solid #dc3545",
-        borderLeft: "4px solid #dc3545",
+        border: `1.5px solid ${destructiveColor}`,
+        borderLeft: `4px solid ${destructiveColor}`,
         borderRadius: 6,
         overflow: "hidden",
         cursor: isDisabled ? "default" : "pointer",
         transition: "box-shadow .15s",
-        boxShadow: "0 1px 4px rgba(0,0,0,.06)",
+        boxShadow: "0 1px 4px color-mix(in oklch, var(--foreground) 8%, transparent)",
         opacity: 1,
       }}
       onMouseEnter={(event) => {
         if (!isDisabled) {
-          event.currentTarget.style.boxShadow = "0 3px 10px rgba(220,53,69,.2)";
+          event.currentTarget.style.boxShadow =
+            "0 3px 10px color-mix(in oklch, var(--destructive) 28%, transparent)";
         }
       }}
       onMouseLeave={(event) => {
-        event.currentTarget.style.boxShadow = "0 1px 4px rgba(0,0,0,.06)";
+        event.currentTarget.style.boxShadow =
+          "0 1px 4px color-mix(in oklch, var(--foreground) 8%, transparent)";
       }}
     >
       <div
         style={{
           padding: "9px 14px",
-          background: "#dc3545",
+          background: destructiveColor,
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
@@ -50,7 +53,7 @@ export function DowntimeStopLineCard({ record, onClick }) {
               height: 7,
               borderRadius: "50%",
               flexShrink: 0,
-              background: "rgba(255,255,255,0.7)",
+              background: "color-mix(in oklch, var(--destructive-foreground) 70%, transparent)",
               animation: "dotPulse 1.4s ease-in-out infinite",
             }}
           />
@@ -58,7 +61,7 @@ export function DowntimeStopLineCard({ record, onClick }) {
             style={{
               fontWeight: 700,
               fontSize: 13,
-              color: "#fff",
+              color: "var(--destructive-foreground)",
               overflow: "hidden",
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
@@ -68,7 +71,14 @@ export function DowntimeStopLineCard({ record, onClick }) {
           </span>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-          <span style={{ fontFamily: "monospace", fontSize: 13, fontWeight: 700, color: "#fff" }}>
+          <span
+            style={{
+              fontFamily: "monospace",
+              fontSize: 13,
+              fontWeight: 700,
+              color: "var(--destructive-foreground)",
+            }}
+          >
             {formatTimer(elapsed)}
           </span>
         </div>
@@ -98,7 +108,7 @@ export function DowntimeStopLineCard({ record, onClick }) {
         <div style={{ fontSize: 10, color: "var(--muted-foreground)", marginTop: 1 }}>
           Started: {formatAbsolute(record.processedAt)}
           {" \u00B7 "}
-          <span style={{ color: "#dc3545", fontWeight: 600 }}>Tap to Mark Done</span>
+          <span style={{ color: destructiveColor, fontWeight: 600 }}>Tap to Mark Done</span>
         </div>
       </div>
     </div>
