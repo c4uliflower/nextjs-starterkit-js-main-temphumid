@@ -22,7 +22,7 @@ export function ConfirmedChip({ label, sub, color, bg, onClear }) {
         <button
           onClick={onClear}
           style={{
-            background: "rgba(255,255,255,0.25)",
+            background: "color-mix(in oklch, currentColor 18%, transparent)",
             border: "none",
             borderRadius: 5,
             padding: "2px 8px",
@@ -50,7 +50,7 @@ export function StepBar({ step, total = 3 }) {
             flex: 1,
             height: 3,
             borderRadius: 5,
-            background: index < step ? "#435ebe" : "var(--border)",
+            background: index < step ? "var(--primary)" : "var(--border)",
             transition: "background .2s",
           }}
         />

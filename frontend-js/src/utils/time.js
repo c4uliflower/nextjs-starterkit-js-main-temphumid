@@ -2,8 +2,16 @@
 
 export function parseUTC(isoString) {
   if (!isoString) return null;
-  if (isoString.includes("Z") || isoString.includes("+")) return new Date(isoString);
-  return new Date(isoString.replace(" ", "T") + "+08:00");
+  if (isoString instanceof Date) return isoString;
+
+  const value = String(isoString)
+    .trim()
+    .replace(" ", "T")
+    .replace(/(\.\d{3})\d+/, "$1");
+
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(`${value}T00:00:00+08:00`);
+  if (value.includes("Z") || /[+-]\d{2}:?\d{2}$/.test(value)) return new Date(value);
+  return new Date(`${value}+08:00`);
 }
 
 export function minutesSince(isoString) {
@@ -34,6 +42,31 @@ export function formatAbsolute(isoString) {
     hour: "2-digit",
     minute: "2-digit",
     hour12: true,
+    timeZone: "Asia/Manila",
+  });
+}
+
+export function formatDateOnly(isoString) {
+  if (typeof isoString === "string") {
+    const match = isoString.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+
+    if (match) {
+      const [, year, month, day] = match;
+      return new Date(Number(year), Number(month) - 1, Number(day)).toLocaleDateString("en-PH", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      });
+    }
+  }
+
+  const date = parseUTC(isoString);
+  if (!date || Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
     timeZone: "Asia/Manila",
   });
 }

@@ -107,6 +107,12 @@ it('creates an acknowledged facilities alert with the authenticated actor name',
         ->and($row->acknowledged_by)->toBe('Jane Dela Cruz (EMP-001)');
 });
 
+it('runs the scheduled facilities alert processing command', function (): void {
+    $this->artisan('temphumid:process-facilities-alerts')
+        ->expectsOutput('Processed facilities alerts. readings=0 transitions=0 verifying_updates=0')
+        ->assertExitCode(0);
+});
+
 it('returns the existing active alert instead of creating a duplicate', function (): void {
     facilitiesService()->store(facilitiesRequest());
 

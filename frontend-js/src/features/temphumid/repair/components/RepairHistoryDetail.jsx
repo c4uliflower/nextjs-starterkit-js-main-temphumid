@@ -1,6 +1,7 @@
-import { formatAbsolute, formatTimer } from "@/utils/time";
+import { formatAbsolute, formatDateOnly, formatTimer } from "@/utils/time";
+import { getRepairStatusColor } from "@/features/temphumid/repair/utils/repair";
 
-function RepairHistoryDetailField({ label, value }) {
+function RepairHistoryDetailField({ label, value, valueStyle }) {
   return (
     <div
       style={{
@@ -27,6 +28,7 @@ function RepairHistoryDetailField({ label, value }) {
           color: "var(--foreground)",
           fontWeight: 500,
           wordBreak: "break-word",
+          ...valueStyle,
         }}
       >
         {value || <span style={{ color: "var(--muted-foreground)", fontWeight: 400 }}>-</span>}
@@ -44,9 +46,20 @@ export function RepairHistoryDetail({ record }) {
       <RepairHistoryDetailField label="Machine QR" value={record.machineQr} />
       <RepairHistoryDetailField label="Location" value={record.location} />
       <RepairHistoryDetailField label="Description" value={record.description} />
-      <RepairHistoryDetailField label="Status" value={record.acuStatus} />
+      <RepairHistoryDetailField
+        label="Status"
+        value={record.acuStatus}
+        valueStyle={
+          record.acuStatus
+            ? { color: getRepairStatusColor(record.acuStatus), fontWeight: 700 }
+            : {}
+        }
+      />
       <RepairHistoryDetailField label="Operator" value={record.technicianId} />
-      <RepairHistoryDetailField label="Reason" value={record.reason} />
+      <RepairHistoryDetailField
+        label="Installed Date"
+        value={record.installedDate ? formatDateOnly(record.installedDate) : null}
+      />
       <RepairHistoryDetailField label="Remarks" value={record.remarks} />
       <RepairHistoryDetailField
         label="Duration"

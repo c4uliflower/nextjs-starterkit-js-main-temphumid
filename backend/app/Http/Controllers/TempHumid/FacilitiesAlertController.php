@@ -8,6 +8,8 @@ use App\Http\Controllers\Controller;
 use App\Services\TempHumid\FacilitiesAlertService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
+use Throwable;
 
 class FacilitiesAlertController extends Controller
 {
@@ -27,7 +29,15 @@ class FacilitiesAlertController extends Controller
 
     public function processReadings(): JsonResponse
     {
-        return $this->facilitiesAlertService->processReadings();
+        try {
+            return response()->json($this->facilitiesAlertService->processReadings(), 200);
+        } catch (Throwable $exception) {
+            Log::error('FacilitiesAlertController::processReadings failed', [
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Failed to process readings.'], 500);
+        }
     }
 
     public function acknowledge(Request $request, int $id): JsonResponse
@@ -52,7 +62,15 @@ class FacilitiesAlertController extends Controller
 
     public function processVerifying(): JsonResponse
     {
-        return $this->facilitiesAlertService->processVerifying();
+        try {
+            return response()->json($this->facilitiesAlertService->processVerifying(), 200);
+        } catch (Throwable $exception) {
+            Log::error('FacilitiesAlertController::processVerifying failed', [
+                'error' => $exception->getMessage(),
+            ]);
+
+            return response()->json(['message' => 'Failed to process verifying alerts.'], 500);
+        }
     }
 
     public function escalate(Request $request, int $id): JsonResponse

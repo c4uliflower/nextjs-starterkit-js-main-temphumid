@@ -10,6 +10,11 @@ export async function fetchSensorStatusByFloor(floor, options = {}) {
   return response.data?.data ?? [];
 }
 
+export async function saveBatchSensorStatuses(payload) {
+  const response = await axios.post(`${API_BASE}/sensors/status/batch`, payload);
+  return response.data?.data ?? null;
+}
+
 export async function fetchBatchSensorLimits(areaIds) {
   const response = await axios.get(`${API_BASE}/sensors/limits/batch-show`, {
     params: { areaIds },
@@ -22,11 +27,6 @@ export async function fetchBatchSensorLimits(areaIds) {
 
 export async function saveBatchSensorLimits(payload) {
   const response = await axios.post(`${API_BASE}/sensors/limits/batch`, payload);
-  return response.data?.data ?? null;
-}
-
-export async function saveBatchSensorStatuses(payload) {
-  const response = await axios.post(`${API_BASE}/sensors/status/batch`, payload);
   return response.data?.data ?? null;
 }
 
@@ -135,7 +135,6 @@ export async function uploadDowntimeRecords(records) {
           .filter((record) => typeof record === "object")
           .map((record) => ({
             id: Number(record.id),
-            maintenance_reason: record.reason || record.maintenance_reason || null,
             remarks: record.remarks || null,
           })),
       }
@@ -184,7 +183,6 @@ export async function uploadRepairRecords(records) {
           .filter((record) => typeof record === "object")
           .map((record) => ({
             id: Number(record.id),
-            repair_reason: record.reason || record.repair_reason || null,
             remarks: record.remarks || null,
           })),
       }

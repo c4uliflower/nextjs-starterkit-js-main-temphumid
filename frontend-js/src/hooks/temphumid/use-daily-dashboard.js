@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
-import axios from "@/lib/axios";
+import { fetchSensorStatusByFloor } from "@/features/temphumid/shared/utils/api";
+import { fetchBatchSensorHistory } from "@/utils/api";
 import {
   DAILY_SENSOR_MAP,
   DAILY_FLOOR_SLUGS,
@@ -21,8 +22,6 @@ import {
   buildDailyChartSubtitle,
   exportDailyReadingsToExcel,
 } from "@/utils/daily";
-
-const API_BASE = "/api/temphumid";
 
 // Module-level caches — persist across navigations
 let summaryCache = null;
@@ -98,10 +97,7 @@ export function useDailyDashboard() {
     if (Object.keys(statusCache).length > 0) return;
     Promise.all(
       DAILY_FLOOR_SLUGS.map((slug) =>
-        axios
-          .get(`${API_BASE}/sensors/status`, { params: { floor: slug } })
-          .then((res) => res.data.data)
-          .catch(() => [])
+        fetchSensorStatusByFloor(slug).catch(() => [])
       )
     ).then((results) => {
       results.flat().forEach((d) => {
@@ -252,24 +248,8 @@ export function useDailyDashboard() {
       const from = toISODate(range.from);
       const to = toISODate(range.to);
 
-      const res = await axios.get(
-        `${API_BASE}/sensors/readings/history/batch`,
-        {
-          params: { areaIds, from, to },
-          paramsSerializer: (params) => {
-            const parts = [];
-            (params.areaIds ?? []).forEach((id) => {
-              parts.push(`areaIds[]=${encodeURIComponent(id)}`);
-            });
-            parts.push(`from=${params.from}`);
-            parts.push(`to=${params.to}`);
-            return parts.join("&");
-          },
-        }
-      );
-
-      const batchData = res.data.data;
-      const serverRes = res.data.meta?.resolution ?? "raw";
+      const { data: batchData, meta } = await fetchBatchSensorHistory(areaIds, from, to);
+      const serverRes = meta?.resolution ?? "raw";
 
       const allTimes = new Set();
       Object.values(batchData).forEach(({ readings }) => {

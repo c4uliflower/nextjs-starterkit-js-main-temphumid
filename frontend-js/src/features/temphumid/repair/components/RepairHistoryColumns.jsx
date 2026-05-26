@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 
-import { formatAbsolute, formatTimer } from "@/utils/time";
+import { formatAbsolute, formatDateOnly, formatTimer } from "@/utils/time";
 
 export function buildRepairHistoryColumns(setSelectedHistory) {
   return [
@@ -17,7 +17,11 @@ export function buildRepairHistoryColumns(setSelectedHistory) {
     },
     { accessorKey: "technicianId", header: "Operator" },
     { accessorKey: "acuStatus", header: "Status" },
-    { accessorKey: "reason", header: "Reason" },
+    {
+      header: "Installed",
+      cell: ({ row }) =>
+        row.original.installedDate ? formatDateOnly(row.original.installedDate) : "-",
+    },
     {
       id: "remarks",
       header: "Remarks",

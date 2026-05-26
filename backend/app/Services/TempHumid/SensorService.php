@@ -38,10 +38,16 @@ class SensorService
             ->get();
 
         $areaIds = $sensors->pluck('Area ID')->map(fn ($areaId): string => (string) $areaId)->all();
+        $chipIds = $sensors->pluck('Chip ID')->map(fn ($chipId): string => (string) $chipId)->all();
         $latestLimits = $this->sensorLimitService->latestForAreaIds($areaIds);
+        $latestReadings = $this->latestReadingsForChipIds($chipIds);
 
         return $sensors
-            ->map(fn (Sensor $sensor): array => $this->buildCurrentReading($sensor, $latestLimits))
+            ->map(fn (Sensor $sensor): array => $this->buildCurrentReading(
+                $sensor,
+                $latestLimits,
+                $latestReadings[$sensor->chipId()] ?? null
+            ))
             ->values()
             ->all();
     }
@@ -191,6 +197,45 @@ class SensorService
             ->whereNotNull('Humidity')
             ->orderByDesc('Day_Time')
             ->first();
+    }
+
+    /**
+     * @param  string[]  $chipIds
+     * @return array<string, object>
+     */
+    private function latestReadingsForChipIds(array $chipIds): array
+    {
+        if ($chipIds === []) {
+            return [];
+        }
+
+        $ranked = DB::connection('temphumid')
+            ->table('TempHumid_Calib_Log')
+            ->select([
+                'ID',
+                'Chip ID',
+                'Day_Time',
+                'Temperature',
+                'Humidity',
+                'Heat Index',
+            ])
+            ->selectRaw('ROW_NUMBER() OVER (PARTITION BY [Chip ID] ORDER BY [Day_Time] DESC, [ID] DESC) as reading_rank')
+            ->whereIn('Chip ID', $chipIds)
+            ->whereNotNull('Temperature')
+            ->whereNotNull('Humidity');
+
+        $rows = DB::connection('temphumid')
+            ->query()
+            ->fromSub($ranked, 'ranked_readings')
+            ->where('reading_rank', 1)
+            ->get();
+
+        $latest = [];
+        foreach ($rows as $row) {
+            $latest[(string) $row->{'Chip ID'}] = $row;
+        }
+
+        return $latest;
     }
 
     /**

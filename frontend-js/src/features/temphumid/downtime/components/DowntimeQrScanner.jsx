@@ -10,6 +10,7 @@ export function DowntimeQrScanner({ onScan, label, onError }) {
   const streamRef = useRef(null);
   const rafRef = useRef(null);
   const doneRef = useRef(false);
+  const tickRef = useRef(null);
 
   const stopCamera = useCallback(() => {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -43,8 +44,16 @@ export function DowntimeQrScanner({ onScan, label, onError }) {
       }
     }
 
-    setTimeout(() => requestAnimationFrame(tick), 150);
+    setTimeout(() => {
+      if (tickRef.current) {
+        rafRef.current = requestAnimationFrame(tickRef.current);
+      }
+    }, 150);
   }, [onScan, stopCamera]);
+
+  useEffect(() => {
+    tickRef.current = tick;
+  }, [tick]);
 
   useEffect(() => {
     doneRef.current = false;
@@ -98,7 +107,7 @@ export function DowntimeQrScanner({ onScan, label, onError }) {
           width: "100%",
           borderRadius: 5,
           overflow: "hidden",
-          background: "#000",
+          background: "var(--foreground)",
           aspectRatio: "4/3",
         }}
       >
@@ -125,33 +134,41 @@ export function DowntimeQrScanner({ onScan, label, onError }) {
         >
           <path
             d="M10 25 L10 10 L25 10"
-            stroke="#fff"
+            stroke="var(--primary-foreground)"
             strokeWidth="2.5"
             fill="none"
             strokeLinecap="round"
           />
           <path
             d="M75 10 L90 10 L90 25"
-            stroke="#fff"
+            stroke="var(--primary-foreground)"
             strokeWidth="2.5"
             fill="none"
             strokeLinecap="round"
           />
           <path
             d="M90 75 L90 90 L75 90"
-            stroke="#fff"
+            stroke="var(--primary-foreground)"
             strokeWidth="2.5"
             fill="none"
             strokeLinecap="round"
           />
           <path
             d="M25 90 L10 90 L10 75"
-            stroke="#fff"
+            stroke="var(--primary-foreground)"
             strokeWidth="2.5"
             fill="none"
             strokeLinecap="round"
           />
-          <line x1="12" y1="50" x2="88" y2="50" stroke="#435ebe" strokeWidth="1.5" opacity="0.7">
+          <line
+            x1="12"
+            y1="50"
+            x2="88"
+            y2="50"
+            stroke="var(--primary)"
+            strokeWidth="1.5"
+            opacity="0.7"
+          >
             <animateTransform
               attributeName="transform"
               type="translate"

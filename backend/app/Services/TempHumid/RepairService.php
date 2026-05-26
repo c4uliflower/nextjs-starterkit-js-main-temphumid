@@ -180,15 +180,20 @@ class RepairService
         $processedAt = new Carbon($record->getAttribute('processed_at'));
         $durationSeconds = (int) $processedAt->diffInSeconds($markedDoneAt);
 
+        $values = [
+            'remarks' => $data['remarks'] ?? null,
+            'marked_done_at' => $markedDoneAt,
+            'marked_done_by' => $markedDoneBy,
+            'duration_seconds' => $durationSeconds,
+        ];
+
+        if (array_key_exists('repair_reason', $data)) {
+            $values['repair_reason'] = $data['repair_reason'];
+        }
+
         RepairRecord::query()
             ->where('ID', $id)
-            ->update([
-                'repair_reason' => $data['repair_reason'] ?? null,
-                'remarks' => $data['remarks'] ?? null,
-                'marked_done_at' => $markedDoneAt,
-                'marked_done_by' => $markedDoneBy,
-                'duration_seconds' => $durationSeconds,
-            ]);
+            ->update($values);
 
         return [
             'status' => 200,
@@ -246,7 +251,10 @@ class RepairService
             ];
 
             if ($draft !== null) {
-                $values['repair_reason'] = $draft['repair_reason'] ?? null;
+                if (array_key_exists('repair_reason', $draft)) {
+                    $values['repair_reason'] = $draft['repair_reason'];
+                }
+
                 $values['remarks'] = $draft['remarks'] ?? null;
             }
 
@@ -327,7 +335,7 @@ class RepairService
             'description' => $machine->getAttribute('DESCRIPTION'),
             'status' => ((int) $machine->getAttribute('IS_ACTIVE')) === 1 ? 'Active' : 'Inactive',
             'operationalStatus' => $machine->getAttribute('STATUS'),
-            'installedDate' => $machine->getAttribute('INSTALLED_DATE'),
+            'installedDate' => $this->formatDateValue($machine->getAttribute('INSTALLED_DATE')),
         ];
     }
 
@@ -336,6 +344,9 @@ class RepairService
      */
     private function mapRepairRecord(RepairRecord $record): array
     {
+        $machine = $this->findAcu((string) $record->getAttribute('machine_qr'))
+            ?? $this->findAcu((string) $record->getAttribute('machine_id'));
+
         return [
             'id' => $record->getAttribute('ID'),
             'source_alert_id' => $record->getAttribute('source_alert_id'),
@@ -354,7 +365,25 @@ class RepairService
             'uploaded_at' => $record->getAttribute('uploaded_at'),
             'uploaded_by' => $record->getAttribute('uploaded_by'),
             'duration_seconds' => $record->getAttribute('duration_seconds'),
+            'installed_date' => $this->formatDateValue($machine?->getAttribute('INSTALLED_DATE')),
             'status' => $record->getAttribute('status'),
         ];
+    }
+
+    private function formatDateValue(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            if ($value instanceof \DateTimeInterface) {
+                return Carbon::instance($value)->toDateString();
+            }
+
+            return Carbon::parse((string) $value)->toDateString();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 }

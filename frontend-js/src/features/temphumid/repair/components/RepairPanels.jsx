@@ -9,6 +9,8 @@ import { RepairPaneField } from "@/features/temphumid/repair/components/RepairAt
 import { buildRepairHistoryColumns } from "@/features/temphumid/repair/components/RepairHistoryColumns";
 import { RepairHistoryDetail } from "@/features/temphumid/repair/components/RepairHistoryDetail";
 import { RepairStopLineCard } from "@/features/temphumid/repair/components/RepairStopLineCard";
+import { getRepairStatusColor } from "@/features/temphumid/repair/utils/repair";
+import { formatDateOnly } from "@/utils/time";
 
 export function RepairListPanel({ records, onRowClick, onStartRepair, showStartButton = true }) {
   return (
@@ -150,7 +152,7 @@ export function RepairFormPanel({ formData, acuStatus }) {
           style={{
             border: "1px solid var(--border)",
             borderRadius: 999,
-            color: hasData ? "#0f766e" : "var(--muted-foreground)",
+            color: hasData ? "var(--primary)" : "var(--muted-foreground)",
             fontSize: 12,
             fontWeight: 700,
             padding: "3px 9px",
@@ -187,12 +189,15 @@ export function RepairFormPanel({ formData, acuStatus }) {
             <RepairPaneField
               label="Status"
               value={acuStatus}
-              valueStyle={acuStatus === "Active" ? { color: "#16a34a", fontWeight: 700 } : {}}
+              valueStyle={acuStatus ? { color: getRepairStatusColor(acuStatus), fontWeight: 700 } : {}}
             />
             <RepairPaneField label="Machine ID" value={formData.machineId} />
             <RepairPaneField label="Location" value={formData.location} />
             <RepairPaneField label="Operator" value={formData.technicianId} />
-            <RepairPaneField label="Reason" value={formData.reason} />
+            <RepairPaneField
+              label="Installed Date"
+              value={formData.installedDate ? formatDateOnly(formData.installedDate) : ""}
+            />
             <RepairPaneField label="Remarks" value={formData.remarks} />
             <RepairPaneField label="Duration" value={formData.duration} />
             <RepairPaneField label="Marked Done" value={formData.markedDone} />

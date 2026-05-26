@@ -16,8 +16,8 @@ export function buildDowntimeHistoryColumns(setSelectedHistory) {
       ),
     },
     { accessorKey: "technicianId", header: "Operator" },
-    { accessorKey: "symptom", header: "Symptom" },
-    { accessorKey: "reason", header: "Reason" },
+    { accessorKey: "sensorStatus", header: "Status" },
+    { accessorKey: "chipId", header: "Chip ID" },
     {
       id: "remarks",
       header: "Remarks",

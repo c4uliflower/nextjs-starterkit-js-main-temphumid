@@ -1,4 +1,4 @@
-﻿import { useElapsedTimer } from "@/hooks/use-elapsed-timer";
+import { useElapsedTimer } from "@/hooks/use-elapsed-timer";
 import { MonitoringExpandableStatusCard } from "@/features/temphumid/sensor-status/components/MonitoringStatusCard";
 import { StatusDot } from "@/features/temphumid/sensor-status/components/MonitoringStatusDots";
 import {

@@ -106,14 +106,20 @@ export default function FacilitiesAlertsView() {
               />
               <DashboardCard
                 value={String(stats.escalatedCount)}
-                label="Escalated"
+                label="Delayed"
                 icon={BellRing}
                 variant="destructive"
               />
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-              {ACTIVE_COLUMNS.map((col) => (
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
+                gap: 16,
+              }}
+            >
+              {ACTIVE_COLUMNS.filter((col) => col.key !== "open").map((col) => (
                 <FacilitiesKanbanColumn
                   key={col.key}
                   col={col}
@@ -125,6 +131,17 @@ export default function FacilitiesAlertsView() {
               ))}
             </div>
 
+            {ACTIVE_COLUMNS.filter((col) => col.key === "open").map((col) => (
+              <FacilitiesKanbanColumn
+                key={col.key}
+                col={col}
+                alerts={alertsByCol[col.key]}
+                onAcknowledge={handleAcknowledge}
+                onResolve={handleResolve}
+                onConflict={handleConflict}
+              />
+            ))}
+
             <div
               style={{
                 background: "var(--card)",
@@ -133,23 +150,29 @@ export default function FacilitiesAlertsView() {
                 overflow: "hidden",
               }}
             >
-              <div style={{ padding: "14px 20px", background: "var(--card)" }}>
+              <div
+                style={{
+                  padding: "12px 16px",
+                  background: "var(--success)",
+                  color: "var(--success-foreground)",
+                }}
+              >
                 <p
                   style={{
                     fontWeight: 700,
                     fontSize: 14,
-                    color: "var(--foreground)",
+                    color: "inherit",
                     margin: 0,
                   }}
                 >
                   Resolved
                 </p>
               </div>
-              <div style={{ padding: "16px 20px" }}>
+              <div style={{ padding: "10px" }}>
                 {resolvedAlerts.length === 0 ? (
                   <p
                     className="text-center text-sm text-muted-foreground"
-                    style={{ padding: "16px 0" }}
+                    style={{ padding: "40px 12px" }}
                   >
                     No resolved alerts yet.
                   </p>

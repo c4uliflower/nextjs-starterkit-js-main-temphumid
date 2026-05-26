@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import axios from "@/lib/axios";
+import { fetchFacilitiesAlerts } from "@/features/temphumid/shared/utils/api";
 import {
   ESCALATION_THRESHOLD_MINS,
   isFacilitiesDelayActionable,
@@ -9,7 +9,6 @@ import {
 
 // Copied from src/hooks/use-escalated-facilities-alerts.js as an additive scaffold.
 
-const API_BASE = "/api/temphumid";
 const POLL_INTERVAL_MS = 60_000;
 
 function minutesSince(isoString) {
@@ -27,11 +26,7 @@ export function useEscalatedFacilitiesAlerts() {
 
   const fetchAndFilter = useCallback(async () => {
     try {
-      const response = await axios.get(`${API_BASE}/facilities/alerts`, {
-        params: { status: ["acknowledged", "open"] },
-      });
-
-      const alerts = response.data?.data ?? [];
+      const alerts = await fetchFacilitiesAlerts({ status: ["acknowledged", "open"] });
       const filtered = alerts.filter(isFacilitiesDelayActionable);
 
       const enriched = filtered.map((alert) => {

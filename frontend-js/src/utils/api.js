@@ -1,15 +1,6 @@
 import axios from "@/lib/axios";
 import { API_BASE } from "@/utils/floors";
 
-export async function fetchSensorStatusByFloor(floor, options = {}) {
-  const response = await axios.get(`${API_BASE}/sensors/status`, {
-    params: { floor },
-    signal: options.signal,
-  });
-
-  return response.data?.data ?? [];
-}
-
 export async function fetchDashboardSummary(options = {}) {
   const response = await axios.get(`${API_BASE}/dashboard/summary`, {
     signal: options.signal,
@@ -25,6 +16,18 @@ export async function fetchCurrentReadingsByFloor(floor, options = {}) {
   });
 
   return response.data?.data ?? [];
+}
+
+export async function fetchMonitoringSnapshot(options = {}) {
+  const response = await axios.get(`${API_BASE}/monitoring/snapshot`, {
+    signal: options.signal,
+  });
+
+  return response.data?.data ?? {
+    readings: [],
+    sensorStatuses: [],
+    facilitiesAlerts: [],
+  };
 }
 
 export async function fetchBatchSensorHistory(areaIds, from, to, options = {}) {

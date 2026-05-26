@@ -2,23 +2,16 @@
 
 import { useState } from "react";
 
-import { Combobox } from "@/components/custom/Combobox";
 import { Button } from "@/components/ui/button";
 
-import {
-  REPAIR_REASON_OPTIONS,
-  REPAIR_REASONS,
-} from "@/features/temphumid/repair/utils/repair";
 import { markRepairDone } from "@/features/temphumid/shared/utils/api";
 
 export function MarkRepairDoneContent({ record, onDone, onClose }) {
-  const [reason, setReason] = useState("");
   const [remarks, setRemarks] = useState("");
   const [saving, setSaving] = useState(false);
   const [apiError, setApiError] = useState(null);
 
   const reset = () => {
-    setReason("");
     setRemarks("");
     setSaving(false);
     setApiError(null);
@@ -29,18 +22,13 @@ export function MarkRepairDoneContent({ record, onDone, onClose }) {
     setApiError(null);
 
     try {
-      const reasonLabel = reason
-        ? REPAIR_REASONS.find((item) => item.id === reason)?.label ?? reason
-        : null;
       const data = await markRepairDone(record.id, {
-        repair_reason: reasonLabel,
         remarks: remarks.trim() || null,
       });
 
-      onDone(record.id, reason, {
+      onDone(record.id, null, {
         markedDoneAt: data.marked_done_at,
         durationSeconds: data.duration_seconds,
-        reasonLabel,
         remarks: data.remarks ?? "",
       });
 
@@ -55,20 +43,6 @@ export function MarkRepairDoneContent({ record, onDone, onClose }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <div>
-        <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-          Reason for Repair
-        </label>
-        <Combobox
-          options={REPAIR_REASON_OPTIONS}
-          value={reason}
-          onValueChange={setReason}
-          placeholder="Select reason..."
-          disabled={saving}
-          className="mt-2 w-full"
-        />
-      </div>
-
       <div>
         <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Remarks
@@ -95,7 +69,7 @@ export function MarkRepairDoneContent({ record, onDone, onClose }) {
             transition: "border-color .15s",
           }}
           onFocus={(event) => {
-            event.target.style.borderColor = "#0f766e";
+            event.target.style.borderColor = "var(--primary)";
           }}
           onBlur={(event) => {
             event.target.style.borderColor = "var(--border)";

@@ -166,35 +166,44 @@ class FacilitiesAlertService
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = DB::connection('temphumid')
-                ->table('TempHumid_Facilities_Alert_Log');
-
-            if ($request->has('status')) {
-                $statuses = (array) $request->query('status');
-                $query->whereIn('notif_status', $statuses);
-            }
-
-            $rows = $query
-                ->orderByRaw("
-                    CASE notif_status
-                        WHEN 'acknowledged' THEN 0
-                        WHEN 'open'         THEN 1
-                        WHEN 'verifying'    THEN 2
-                        WHEN 'resolved'     THEN 3
-                        ELSE 4
-                    END ASC
-                ")
-                ->orderBy('acknowledged_at', 'asc')
-                ->get();
-
-            $data = $rows->map(fn ($r) => $this->formatAlert($r));
-
-            return response()->json(['data' => $data], 200);
+            return response()->json([
+                'data' => $this->listAlerts($request->has('status') ? $request->query('status') : null),
+            ], 200);
 
         } catch (Throwable $e) {
             Log::error('FacilitiesAlertController::index failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Failed to fetch alerts.'], 500);
         }
+    }
+
+    /**
+     * @param  array<int, string>|string|null  $statuses
+     * @return array<int, array<string, mixed>>
+     */
+    public function listAlerts(array|string|null $statuses = null): array
+    {
+        $query = DB::connection('temphumid')
+            ->table('TempHumid_Facilities_Alert_Log');
+
+        if ($statuses !== null) {
+            $query->whereIn('notif_status', (array) $statuses);
+        }
+
+        return $query
+            ->orderByRaw("
+                CASE notif_status
+                    WHEN 'acknowledged' THEN 0
+                    WHEN 'open'         THEN 1
+                    WHEN 'verifying'    THEN 2
+                    WHEN 'resolved'     THEN 3
+                    ELSE 4
+                END ASC
+            ")
+            ->orderBy('acknowledged_at', 'asc')
+            ->get()
+            ->map(fn ($row): array => $this->formatAlert($row))
+            ->values()
+            ->all();
     }
 
     // =============================================================================
@@ -210,7 +219,10 @@ class FacilitiesAlertService
     //   { message: string, processed: int, transitions: int }
     // =============================================================================
     
-    public function processReadings(): JsonResponse
+    /**
+     * @return array{message: string, processed: int, transitions: int}
+     */
+    public function processReadings(): array
         {
             try {
                 $alerts = DB::connection('temphumid')
@@ -314,17 +326,17 @@ class FacilitiesAlertService
                     }
                 }
 
-                return response()->json([
+                return [
                     'message'     => 'Readings processed.',
                     'processed'   => $alerts->count(),
                     'transitions' => $transitions,
-                ], 200);
+                ];
 
             } catch (Throwable $e) {
                 Log::error('FacilitiesAlertController::processReadings failed', [
                     'error' => $e->getMessage(),
                 ]);
-                return response()->json(['message' => 'Failed to process readings.'], 500);
+                throw $e;
             }
         }
     
@@ -629,7 +641,10 @@ class FacilitiesAlertService
     // After each resolve/bounce, updates the latest pending action log row
     // with action_result, evaluated_at, evaluation_reading_at.
     // =========================================================================
-    public function processVerifying(): JsonResponse
+    /**
+     * @return array{message: string, data: array<int, array<string, mixed>>}
+     */
+    public function processVerifying(): array
     {
         try {
             $alerts = DB::connection('temphumid')
@@ -770,16 +785,16 @@ class FacilitiesAlertService
                 $updated[] = $this->formatAlert($updatedRow);
             }
 
-            return response()->json([
+            return [
                 'message' => 'Processed verifying alerts.',
                 'data'    => $updated,
-            ], 200);
+            ];
 
         } catch (Throwable $e) {
             Log::error('FacilitiesAlertController::processVerifying failed', [
                 'error' => $e->getMessage(),
             ]);
-            return response()->json(['message' => 'Failed to process verifying alerts.'], 500);
+            throw $e;
         }
     }
 

@@ -2,7 +2,11 @@
 
 import { ConfirmedChip } from "@/features/temphumid/downtime/components/DowntimeAtoms";
 import { DowntimeQrScanner } from "@/features/temphumid/downtime/components/DowntimeQrScanner";
-import { getDowntimeSymptomColor } from "@/features/temphumid/downtime/utils/downtime";
+import {
+  getSensorLifecycleStatusColor,
+  getSensorLifecycleStatusForeground,
+  normalizeSensorLifecycleStatus,
+} from "@/features/temphumid/downtime/utils/downtime";
 
 export function DowntimeSensorScanStep({ onError, onScan, saving, scanError }) {
   return (
@@ -35,8 +39,8 @@ export function DowntimeTechnicianScanStep({
       <ConfirmedChip
         label={sensorInfo.lineName}
         sub={`${sensorInfo.areaId} \u00B7 ${sensorInfo.plant}${sensorInfo.floor}`}
-        color="#fff"
-        bg="#435ebe"
+        color="var(--primary-foreground)"
+        bg="var(--primary)"
         onClear={onClearSensor}
       />
       <DowntimeQrScanner
@@ -67,29 +71,30 @@ export function DowntimeConfirmStartStep({
   onConfirm,
   saving,
   sensorInfo,
-  symptomLabel,
   techInfo,
 }) {
+  const sensorStatus = normalizeSensorLifecycleStatus(sensorInfo.sensorStatus);
+
   return (
     <>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         <ConfirmedChip
           label={sensorInfo.lineName}
           sub={`${sensorInfo.areaId} \u00B7 ${sensorInfo.plant}${sensorInfo.floor}`}
-          color="#fff"
-          bg="#435ebe"
+          color="var(--primary-foreground)"
+          bg="var(--primary)"
           onClear={onClearSensor}
         />
         <ConfirmedChip
           label={`Operator ID: ${techInfo.technicianId}`}
-          color="#fff"
-          bg="#435ebe"
+          color="var(--primary-foreground)"
+          bg="var(--primary)"
           onClear={onClearTech}
         />
         <ConfirmedChip
-          label={`Symptom: ${symptomLabel}`}
-          color="#fff"
-          bg={symptomLabel && symptomLabel !== "-" ? getDowntimeSymptomColor(symptomLabel) : "#64748b"}
+          label={`Status: ${sensorStatus}`}
+          color={getSensorLifecycleStatusForeground(sensorStatus)}
+          bg={getSensorLifecycleStatusColor(sensorStatus)}
         />
       </div>
       {apiError && <p className="text-sm text-destructive">{apiError}</p>}

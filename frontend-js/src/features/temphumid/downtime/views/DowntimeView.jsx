@@ -45,7 +45,6 @@ export default function DowntimeView() {
     setSelectedHistory,
     startOpen,
     stopLineList,
-    symptom,
     uploadOpen,
   } = useDowntimeDashboard();
 
@@ -132,10 +131,10 @@ export default function DowntimeView() {
                 marginBottom: 12,
                 padding: "10px 14px",
                 borderRadius: 8,
-                background: "#fef2f2",
-                border: "1px solid #fca5a5",
+                background: "color-mix(in oklch, var(--destructive) 10%, var(--card))",
+                border: "1px solid color-mix(in oklch, var(--destructive) 35%, var(--border))",
                 fontSize: 13,
-                color: "#b91c1c",
+                color: "var(--destructive)",
                 display: "flex",
                 alignItems: "center",
                 gap: 8,
@@ -155,7 +154,7 @@ export default function DowntimeView() {
             />
 
             <div>
-              <DowntimeFormPanel formData={formData} symptom={symptom} />
+              <DowntimeFormPanel formData={formData} />
             </div>
 
             {historyError && (
@@ -163,10 +162,10 @@ export default function DowntimeView() {
                 style={{
                   padding: "10px 14px",
                   borderRadius: 8,
-                  background: "#fef2f2",
-                  border: "1px solid #fca5a5",
+                  background: "color-mix(in oklch, var(--destructive) 10%, var(--card))",
+                  border: "1px solid color-mix(in oklch, var(--destructive) 35%, var(--border))",
                   fontSize: 13,
-                  color: "#b91c1c",
+                  color: "var(--destructive)",
                   display: "flex",
                   alignItems: "center",
                   gap: 8,

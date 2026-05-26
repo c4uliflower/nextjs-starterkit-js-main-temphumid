@@ -1,4 +1,4 @@
-﻿import { validateDowntimeSensorLineName } from "@/features/temphumid/shared/utils/api";
+import { validateDowntimeSensorLineName } from "@/features/temphumid/shared/utils/api";
 import { formatAbsolute, formatTimer } from "@/utils/time";
 
 export const DOWNTIME_REASONS = [
@@ -24,9 +24,9 @@ export const SYMPTOM_LABELS = {
 };
 
 export const SYMPTOM_DOT = {
-  "Out of Spec": "#dc3545",
-  "No Data": "#adb5bd",
-  Stable: "#22c55e",
+  "Out of Spec": "var(--destructive)",
+  "No Data": "var(--secondary)",
+  Stable: "var(--success)",
 };
 
 export const DOWNTIME_GLOBAL_STYLES = `
@@ -39,6 +39,8 @@ export const DOWNTIME_GLOBAL_STYLES = `
 const EMPTY_FORM_DATA = {
   lineName: "",
   areaId: "",
+  chipId: "",
+  sensorStatus: "",
   technicianId: "",
   reason: "",
   remarks: "",
@@ -66,7 +68,28 @@ export function getDowntimeSymptomLabel(symptom) {
 }
 
 export function getDowntimeSymptomColor(symptom) {
-  return SYMPTOM_DOT[getDowntimeSymptomLabel(symptom)] ?? "#adb5bd";
+  return SYMPTOM_DOT[getDowntimeSymptomLabel(symptom)] ?? "var(--secondary)";
+}
+
+export function normalizeSensorLifecycleStatus(status) {
+  const normalized = String(status ?? "").trim().toLowerCase();
+
+  if (normalized === "active") return "Active";
+  if (normalized === "inactive" || normalized === "not active") return "Inactive";
+
+  return String(status ?? "").trim() || "Inactive";
+}
+
+export function getSensorLifecycleStatusColor(status) {
+  return normalizeSensorLifecycleStatus(status) === "Active"
+    ? "var(--success)"
+    : "var(--secondary)";
+}
+
+export function getSensorLifecycleStatusForeground(status) {
+  return normalizeSensorLifecycleStatus(status) === "Active"
+    ? "var(--success-foreground)"
+    : "var(--secondary-foreground)";
 }
 
 export async function parseDowntimeSensorQr(rawValue) {
@@ -126,9 +149,11 @@ export function mapActiveDowntimeRecord(record) {
   return {
     id: Number(record.id),
     areaId: record.area_id,
+    chipId: record.chip_id ?? "",
     lineName: record.line_name,
     technicianId: record.processed_by,
     symptom: record.symptom,
+    sensorStatus: normalizeSensorLifecycleStatus(record.sensor_status),
     processedAt: record.processed_at,
     markedDoneAt: record.marked_done_at ?? null,
     uploadedAt: record.uploaded_at ?? null,
@@ -143,9 +168,11 @@ export function mapDowntimeHistoryRecord(record) {
   return {
     id: Number(record.id),
     areaId: record.area_id,
+    chipId: record.chip_id ?? "",
     lineName: record.line_name,
     technicianId: record.processed_by,
     symptom: record.symptom,
+    sensorStatus: normalizeSensorLifecycleStatus(record.sensor_status),
     reason: record.maintenance_reason,
     remarks: record.remarks,
     processedAt: record.processed_at,
@@ -169,9 +196,11 @@ export function isSameDowntimeHistory(previous = [], next = []) {
     if (
       left.id !== right.id ||
       left.areaId !== right.areaId ||
+      left.chipId !== right.chipId ||
       left.lineName !== right.lineName ||
       left.technicianId !== right.technicianId ||
       left.symptom !== right.symptom ||
+      left.sensorStatus !== right.sensorStatus ||
       left.reason !== right.reason ||
       left.remarks !== right.remarks ||
       left.processedAt !== right.processedAt ||
@@ -216,6 +245,8 @@ export function buildQueuedDowntimeFormData(sensorInfo, technicianId) {
   return createDowntimeFormData({
     lineName: sensorInfo?.lineName ?? "",
     areaId: sensorInfo?.areaId ?? "",
+    chipId: sensorInfo?.chipId ?? "",
+    sensorStatus: normalizeSensorLifecycleStatus(sensorInfo?.sensorStatus),
     technicianId: technicianId ?? "",
   });
 }
@@ -230,9 +261,11 @@ export function buildQueuedDowntimeRecord({
   return {
     id: Number(id),
     areaId: sensorInfo.areaId,
+    chipId: sensorInfo.chipId ?? "",
     lineName: sensorInfo.lineName,
     technicianId: techInfo.technicianId,
     symptom: symptomLabel,
+    sensorStatus: normalizeSensorLifecycleStatus(sensorInfo.sensorStatus),
     processedAt,
     markedDoneAt: null,
     uploadedAt: null,
@@ -263,6 +296,8 @@ export function buildSelectedDowntimeFormData(record) {
   return createDowntimeFormData({
     lineName: record?.lineName ?? "",
     areaId: record?.areaId ?? "",
+    chipId: record?.chipId ?? "",
+    sensorStatus: normalizeSensorLifecycleStatus(record?.sensorStatus),
     technicianId: record?.technicianId ?? "",
     reason: record?.reason ?? "",
     remarks: record?.remarks ?? "",

@@ -191,6 +191,35 @@ it('filters current readings by floor', function (): void {
         ->and($readings[0]['areaId'])->toBe('P2F1-03');
 });
 
+it('fetches latest current readings in a bounded number of queries', function (): void {
+    foreach (range(1, 3) as $index) {
+        $areaId = sprintf('P1F1-%02d', $index + 10);
+        $chipId = "0xBULK{$index}";
+
+        insertSensor([
+            'Area ID' => $areaId,
+            'Chip ID' => $chipId,
+            'Line Name' => "Bulk {$index}",
+            'Temp_Upper_Limit' => 30,
+            'Temp_Lower_Limit' => 18,
+            'Humid_Upper_Limit' => 70,
+            'Humid_Lower_Limit' => 40,
+        ]);
+        insertReading($chipId, '2026-05-13 08:00:00', 35, 80);
+        insertReading($chipId, '2026-05-13 09:00:00', 25, 55);
+    }
+
+    DB::flushQueryLog();
+    DB::enableQueryLog();
+
+    $readings = app(SensorService::class)->currentReadings('p1f1');
+
+    expect($readings)->toHaveCount(3)
+        ->and(DB::getQueryLog())->toHaveCount(3);
+
+    DB::disableQueryLog();
+});
+
 function insertSensor(array $overrides): void
 {
     DB::connection('temphumid')->table('Temp_Logger_Chip_ID')->insert(array_merge([
