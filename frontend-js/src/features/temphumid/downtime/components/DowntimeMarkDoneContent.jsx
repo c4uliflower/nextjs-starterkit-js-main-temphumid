@@ -43,6 +43,22 @@ export function MarkDoneContent({ record, onDone, onClose }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div
+        style={{
+          background: "var(--primary)",
+          borderRadius: 5,
+          color: "var(--primary-foreground)",
+          padding: "10px 14px",
+        }}
+      >
+        <div style={{ fontSize: 14, fontWeight: 700, lineHeight: 1.25 }}>
+          {record.lineName}
+        </div>
+        <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.35, opacity: 0.82 }}>
+          {record.areaId}
+        </div>
+      </div>
+
       <div>
         <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Remarks

@@ -204,9 +204,6 @@ export default function RepairView() {
           if (!open) closeMarkDoneModal();
         }}
         title="Mark as Done"
-        description={
-          activeRecord ? `${activeRecord.machineId} \u00B7 ${activeRecord.location}` : ""
-        }
         size="sm"
       >
         {activeRecord && (
