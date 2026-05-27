@@ -203,7 +203,6 @@ export default function DowntimeView() {
           if (!open) closeMarkDoneModal();
         }}
         title="Mark as Done"
-        description={activeRecord ? `${activeRecord.lineName} \u00B7 ${activeRecord.areaId}` : ""}
         size="sm"
       >
         {activeRecord && (
